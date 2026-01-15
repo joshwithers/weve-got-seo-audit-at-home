@@ -214,5 +214,113 @@ def checks():
         click.echo()
 
 
+@cli.command('gsc-auth')
+@click.option('--credentials', help='Path to Google Cloud OAuth credentials JSON file')
+def gsc_auth(credentials):
+    """
+    Authenticate with Google Search Console.
+
+    Setup instructions:
+    1. Go to https://console.cloud.google.com/
+    2. Create a new project (or select existing)
+    3. Enable "Google Search Console API"
+    4. Go to "Credentials" → "Create Credentials" → "OAuth 2.0 Client ID"
+    5. Application type: "Desktop app"
+    6. Download the credentials JSON file
+    7. Run: audit gsc-auth --credentials /path/to/credentials.json
+
+    The auth token will be saved for future use.
+
+    Example:
+        audit gsc-auth --credentials ~/Downloads/client_secret.json
+    """
+    click.echo("🔐 Google Search Console Authentication\n")
+
+    gsc = GSCClient()
+
+    if gsc.authenticate(credentials):
+        click.echo("\n✅ Authentication successful!")
+        click.echo("\nYou can now run: audit gsc-test")
+    else:
+        click.echo("\n❌ Authentication failed")
+        sys.exit(1)
+
+
+@cli.command('gsc-test')
+def gsc_test():
+    """
+    Test Google Search Console connection.
+
+    Verifies that authentication works and lists available sites.
+
+    Example:
+        audit gsc-test
+    """
+    click.echo("🔍 Testing Google Search Console connection...\n")
+
+    gsc = GSCClient()
+
+    if gsc.test_connection():
+        click.echo("\n✅ GSC connection working!")
+    else:
+        click.echo("\n❌ Connection test failed")
+        click.echo("\nRun 'audit gsc-auth' to authenticate first")
+        sys.exit(1)
+
+
+@cli.command('gsc-fetch')
+@click.argument('url')
+@click.option('--days', default=90, help='Number of days of data to fetch (default: 90)')
+@click.option('--db', default='audit.db', help='SQLite database file (default: audit.db)')
+def gsc_fetch(url, days, db):
+    """
+    Fetch Google Search Console data for a site.
+
+    This will fetch traffic data (clicks, impressions, queries) and store
+    it in the database for use in reports.
+
+    Example:
+        audit gsc-fetch https://example.com
+        audit gsc-fetch https://example.com --days 180
+    """
+    click.echo(f"📊 Fetching GSC data for: {url}")
+    click.echo(f"Date range: Last {days} days\n")
+
+    # Initialize GSC client
+    gsc = GSCClient()
+    if not gsc.authenticate():
+        click.echo("❌ Authentication failed. Run 'audit gsc-auth' first.")
+        sys.exit(1)
+
+    # Fetch data
+    data = gsc.fetch_data(url, days=days)
+
+    if not data or not data.get('pages'):
+        click.echo("❌ No data found. Make sure the site is added to Search Console.")
+        sys.exit(1)
+
+    # Save to database
+    database = Database(db)
+    date_range = data['date_range']
+
+    click.echo(f"\n💾 Saving data to database...")
+    saved_count = 0
+
+    for page_url, page_data in data['pages'].items():
+        database.save_gsc_page_data(page_url, page_data, date_range)
+
+        if page_data.get('queries'):
+            database.save_gsc_queries(page_url, page_data['queries'], date_range)
+
+        saved_count += 1
+        if saved_count % 50 == 0:
+            click.echo(f"  Saved {saved_count}/{len(data['pages'])} pages...")
+
+    click.echo(f"\n✅ Saved GSC data for {len(data['pages'])} pages")
+    click.echo(f"   Total clicks: {data['total_clicks']:,}")
+    click.echo(f"   Total impressions: {data['total_impressions']:,}")
+    click.echo(f"   Date range: {date_range['start']} to {date_range['end']}")
+
+
 if __name__ == '__main__':
     cli()
