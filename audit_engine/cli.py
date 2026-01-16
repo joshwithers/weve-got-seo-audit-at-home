@@ -17,7 +17,7 @@ from .gsc_integration import GSCClient
 
 
 @click.group()
-@click.version_option(version="0.2.0")
+@click.version_option(version="0.3.0")
 def cli():
     """
     Local-first SEO audit tool.
@@ -39,7 +39,9 @@ def cli():
 @click.option('--business-name', default='SEO Audit Engine', help='Business name for report credits (default: SEO Audit Engine)')
 @click.option('--prepared-by', default='', help='Name of person/team preparing the report')
 @click.option('--export-dir', default='.', help='Directory for exports when using --format all (default: current directory)')
-def run(url, depth, max_pages, format, output, db, delay, no_robots, business_name, prepared_by, export_dir):
+@click.option('--with-gsc', is_flag=True, help='Include Google Search Console traffic data')
+@click.option('--gsc-days', default=90, help='Days of GSC data to fetch (default: 90)')
+def run(url, depth, max_pages, format, output, db, delay, no_robots, business_name, prepared_by, export_dir, with_gsc, gsc_days):
     """
     Run a complete audit on a website.
 
@@ -90,6 +92,37 @@ def run(url, depth, max_pages, format, output, db, delay, no_robots, business_na
         sys.exit(1)
 
     click.echo(f"\nCrawled {len(crawler.visited)} pages")
+
+    # Fetch GSC data if requested
+    if with_gsc:
+        click.echo("\n=== FETCHING GOOGLE SEARCH CONSOLE DATA ===")
+        gsc = GSCClient()
+        if not gsc.authenticate():
+            click.echo("⚠️  GSC authentication failed. Run 'audit gsc-auth' first.")
+            click.echo("    Continuing without GSC data...")
+        else:
+            gsc_data = gsc.fetch_data(url, days=gsc_days)
+
+            if gsc_data and gsc_data.get('pages'):
+                click.echo(f"\n💾 Saving GSC data...")
+                date_range = gsc_data['date_range']
+                saved_count = 0
+
+                for page_url, page_data in gsc_data['pages'].items():
+                    database.save_gsc_page_data(page_url, page_data, date_range)
+
+                    if page_data.get('queries'):
+                        database.save_gsc_queries(page_url, page_data['queries'], date_range)
+
+                    saved_count += 1
+                    if saved_count % 50 == 0:
+                        click.echo(f"  Saved {saved_count}/{len(gsc_data['pages'])} pages...")
+
+                click.echo(f"\n✅ Saved GSC data for {len(gsc_data['pages'])} pages")
+                click.echo(f"   Total clicks: {gsc_data['total_clicks']:,}")
+                click.echo(f"   Total impressions: {gsc_data['total_impressions']:,}")
+            else:
+                click.echo("⚠️  No GSC data found. Continuing without traffic data...")
 
     # Run audit checks
     click.echo("\n=== RUNNING AUDIT CHECKS ===")

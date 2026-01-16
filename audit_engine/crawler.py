@@ -87,6 +87,15 @@ class Crawler:
                 # Rate limiting
                 time.sleep(self.config.delay_between_requests)
 
+        # Print crawl completion summary
+        print(f"\nCrawled {pages_crawled} pages")
+        if pages_crawled >= self.config.max_pages:
+            print(f"  Stopped: Reached max pages limit ({self.config.max_pages})")
+            print(f"  Tip: Use --max-pages to crawl more pages")
+        if not self.queue:
+            print(f"  All reachable pages within depth {self.config.max_depth} have been crawled")
+            print(f"  Tip: Use --depth to crawl deeper (current: {self.config.max_depth})")
+
     def _fetch_page(self, url: str, depth: int) -> Optional[Page]:
         """Fetch a page and extract SEO data."""
         try:

@@ -1,13 +1,14 @@
 # SEO Audit Engine
 
-**Version 0.2.0** - A local-first SEO website audit tool that runs entirely on your machine. No SaaS, no external dependencies, no cloud services.
+**Version 0.3.0** - A local-first SEO website audit tool that runs entirely on your machine. No SaaS, no external dependencies, no cloud services (except optional Google Search Console).
 
 ## Features
 
 - 🏠 **Local-First** - All data stays on your machine
+- 📊 **Google Search Console Integration** - Traffic-prioritized issues (NEW!)
 - 📝 **Multiple Export Formats** - Markdown, HTML, JSON, CSV
 - ✅ **Interactive To-Do Lists** - Track fixes with checkboxes
-- 📊 **SEO Health Score** - 0-100 rating based on issues
+- 🎯 **SEO Health Score** - 0-100 rating based on issues
 - 🎨 **Custom Branding** - Add your business name to reports
 - 🚫 **Smart Filtering** - Automatically skips PDFs, XML, etc.
 - 🔧 **CLI-First** - Scriptable and automatable
@@ -45,7 +46,32 @@ audit run https://example.com --format html
 
 # All formats at once
 audit run https://example.com --format all
+
+# With Google Search Console (traffic-prioritized!)
+audit run https://example.com --with-gsc
 ```
+
+## Google Search Console Integration (NEW!)
+
+Connect your Google Search Console to get **traffic-prioritized insights**:
+
+```bash
+# One-time setup (5 minutes)
+audit gsc-auth --credentials /path/to/credentials.json
+
+# Run audit with traffic data
+audit run https://example.com --with-gsc
+```
+
+**What you get:**
+- 📈 **Traffic metrics** - See clicks, impressions, CTR for each page
+- 🔍 **Search queries** - View top keywords driving traffic
+- 🎯 **Prioritized issues** - Fix high-traffic pages first
+- 💰 **Opportunities** - Calculate potential traffic gains
+
+**See:** [GSC_SETUP_GUIDE.md](GSC_SETUP_GUIDE.md) for complete setup instructions.
+
+---
 
 ## What It Does
 
@@ -171,6 +197,11 @@ audit checks
 # Clear database
 audit clear
 
+# Google Search Console
+audit gsc-auth --credentials <path>  # One-time authentication
+audit gsc-test                       # Test GSC connection
+audit gsc-fetch <url>                # Fetch traffic data separately
+
 # Show help
 audit --help
 audit run --help
@@ -188,6 +219,8 @@ audit run --help
 --delay SECONDS         # Delay between requests (default: 0.5)
 --no-robots             # Ignore robots.txt
 --db FILE               # Custom database file (default: audit.db)
+--with-gsc              # Include Google Search Console traffic data
+--gsc-days N            # Days of GSC data to fetch (default: 90)
 ```
 
 ### Examples

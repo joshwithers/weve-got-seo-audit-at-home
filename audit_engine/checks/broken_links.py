@@ -27,8 +27,16 @@ class BrokenLinksCheck(BaseCheck):
         # Create a set of crawled URLs with their status codes
         url_status = {page.url: page.status_code for page in pages}
 
+        # Files to ignore (utility files not meant for search engines)
+        ignored_extensions = ['.xml', '.txt', '.json', 'rss.xml', 'llms.txt', 'robots.txt', 'sitemap.xml']
+
         # Check each link
         for link in links:
+            # Skip links to ignored files
+            target_lower = link.target_url.lower()
+            if any(target_lower.endswith(ext) for ext in ignored_extensions):
+                continue
+
             target_status = url_status.get(link.target_url)
 
             # Only check internal links or external links we've crawled

@@ -21,6 +21,119 @@ class Exporter:
         self.db = database
         self.business_name = business_name
         self.prepared_by = prepared_by
+        self._gsc_data = None  # Cache GSC data
+        self._has_gsc = None   # Cache GSC availability
+
+    def _has_gsc_data(self) -> bool:
+        """Check if GSC data is available."""
+        if self._has_gsc is None:
+            self._has_gsc = self.db.has_gsc_data()
+        return self._has_gsc
+
+    def _get_gsc_data(self) -> dict:
+        """Get all GSC data (cached)."""
+        if self._gsc_data is None:
+            self._gsc_data = self.db.get_gsc_page_data()
+        return self._gsc_data
+
+    def _normalize_url_for_matching(self, url: str) -> str:
+        """
+        Normalize URL for matching between crawled pages and GSC data.
+
+        GSC and crawlers may format URLs differently:
+        - Trailing slashes: /page vs /page/
+        - Query params: /page?utm=... vs /page
+        - Fragments: /page#section vs /page
+        - Protocol: http vs https
+        """
+        parsed = urlparse(url)
+
+        # Normalize path (remove trailing slash except for root)
+        path = parsed.path.rstrip('/') if parsed.path != '/' else '/'
+
+        # Build normalized URL (scheme + netloc + path, ignore query/fragment)
+        normalized = f"{parsed.scheme}://{parsed.netloc}{path}"
+
+        return normalized
+
+    def _match_gsc_to_page(self, page_url: str) -> Optional[dict]:
+        """
+        Find matching GSC data for a crawled page.
+        Returns GSC metrics + queries if found.
+        """
+        if not self._has_gsc_data():
+            return None
+
+        gsc_data = self._get_gsc_data()
+        normalized_page = self._normalize_url_for_matching(page_url)
+
+        # Try exact match first
+        if page_url in gsc_data:
+            result = gsc_data[page_url].copy()
+            result['queries'] = self.db.get_gsc_queries(page_url)
+            return result
+
+        # Try normalized match
+        for gsc_url, metrics in gsc_data.items():
+            if self._normalize_url_for_matching(gsc_url) == normalized_page:
+                result = metrics.copy()
+                result['queries'] = self.db.get_gsc_queries(gsc_url)
+                return result
+
+        return None
+
+    def _get_traffic_summary(self) -> Optional[dict]:
+        """Get overall traffic summary from GSC data."""
+        if not self._has_gsc_data():
+            return None
+
+        gsc_data = self._get_gsc_data()
+        if not gsc_data:
+            return None
+
+        total_clicks = sum(d['clicks'] for d in gsc_data.values())
+        total_impressions = sum(d['impressions'] for d in gsc_data.values())
+        avg_ctr = (total_clicks / total_impressions * 100) if total_impressions > 0 else 0
+
+        # Get date range from first entry
+        first_entry = next(iter(gsc_data.values()))
+        date_range = first_entry.get('date_range', {})
+
+        return {
+            'total_clicks': total_clicks,
+            'total_impressions': total_impressions,
+            'avg_ctr': avg_ctr,
+            'date_range': date_range,
+            'pages_with_traffic': len(gsc_data)
+        }
+
+    def _calculate_opportunity(self, gsc_data: dict) -> Optional[str]:
+        """
+        Calculate traffic opportunity for a page.
+        Estimates potential traffic gain if position improves.
+        """
+        if not gsc_data or 'position' not in gsc_data:
+            return None
+
+        position = gsc_data['position']
+        clicks = gsc_data['clicks']
+        impressions = gsc_data['impressions']
+
+        # If already in top 3, opportunity is limited
+        if position <= 3:
+            return "Already in top 3 positions"
+
+        # Estimate CTR improvement if moved to top 3
+        # Rough estimates: position 1 ≈ 30% CTR, position 2 ≈ 15% CTR, position 3 ≈ 10% CTR
+        current_ctr = (clicks / impressions) if impressions > 0 else 0
+        target_ctr = 0.15  # Target position 2
+
+        if current_ctr < target_ctr:
+            potential_clicks = int(impressions * target_ctr) - clicks
+            if potential_clicks > 10:
+                return f"+{potential_clicks} clicks/month if moved to top 3"
+
+        return None
 
     def export_json(self, output_path: str = "audit_report.json") -> None:
         """
@@ -32,6 +145,9 @@ class Exporter:
 
         # Get domain from first page
         domain = pages[0].url if pages else "Unknown"
+
+        # Get traffic summary
+        traffic_summary = self._get_traffic_summary()
 
         # Build the report structure
         report = {
@@ -45,6 +161,7 @@ class Exporter:
                 "errors": sum(1 for i in issues if i.severity.value == "error"),
                 "warnings": sum(1 for i in issues if i.severity.value == "warning"),
                 "notices": sum(1 for i in issues if i.severity.value == "notice"),
+                "traffic": traffic_summary  # Add GSC summary
             },
             "pages": [
                 {
@@ -59,6 +176,7 @@ class Exporter:
                     "redirect_to": page.redirect_to,
                     "depth": page.depth,
                     "crawled_at": page.crawled_at.isoformat() if page.crawled_at else None,
+                    "traffic": self._match_gsc_to_page(page.url)  # Add GSC data per page
                 }
                 for page in pages
             ],
@@ -88,25 +206,44 @@ class Exporter:
         with open(output_path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
 
-            # Header
+            # Header (with GSC columns)
             writer.writerow([
                 "Issue Type",
                 "Severity",
                 "Description",
                 "Affected URL",
                 "Details",
-                "Created At"
+                "Created At",
+                "Traffic (Clicks/Month)",
+                "Impressions",
+                "Average Position",
+                "CTR %",
+                "Top Query"
             ])
 
             # Data rows
             for issue in issues:
+                # Get traffic data if available
+                gsc_data = self._match_gsc_to_page(issue.affected_url) if issue.affected_url else None
+
+                clicks = gsc_data['clicks'] if gsc_data else ""
+                impressions = gsc_data['impressions'] if gsc_data else ""
+                position = f"{gsc_data['position']:.1f}" if gsc_data else ""
+                ctr = f"{gsc_data['ctr'] * 100:.2f}" if gsc_data else ""
+                top_query = gsc_data['queries'][0]['query'] if gsc_data and gsc_data.get('queries') else ""
+
                 writer.writerow([
                     issue.issue_type,
                     issue.severity.value,
                     issue.description,
                     issue.affected_url or "",
                     json.dumps(issue.details) if issue.details else "",
-                    issue.created_at.isoformat() if issue.created_at else ""
+                    issue.created_at.isoformat() if issue.created_at else "",
+                    clicks,
+                    impressions,
+                    position,
+                    ctr,
+                    top_query
                 ])
 
         print(f"Issues CSV exported to: {output_path}")
@@ -118,7 +255,7 @@ class Exporter:
         with open(output_path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
 
-            # Header
+            # Header (with GSC columns)
             writer.writerow([
                 "URL",
                 "Status Code",
@@ -130,11 +267,25 @@ class Exporter:
                 "H1 Text",
                 "Redirect To",
                 "Depth",
-                "Crawled At"
+                "Crawled At",
+                "Traffic (Clicks/Month)",
+                "Impressions",
+                "Average Position",
+                "CTR %",
+                "Top Query"
             ])
 
             # Data rows
             for page in pages:
+                # Get traffic data if available
+                gsc_data = self._match_gsc_to_page(page.url)
+
+                clicks = gsc_data['clicks'] if gsc_data else ""
+                impressions = gsc_data['impressions'] if gsc_data else ""
+                position = f"{gsc_data['position']:.1f}" if gsc_data else ""
+                ctr = f"{gsc_data['ctr'] * 100:.2f}" if gsc_data else ""
+                top_query = gsc_data['queries'][0]['query'] if gsc_data and gsc_data.get('queries') else ""
+
                 writer.writerow([
                     page.url,
                     page.status_code or "",
@@ -146,7 +297,12 @@ class Exporter:
                     page.h1_text or "",
                     page.redirect_to or "",
                     page.depth,
-                    page.crawled_at.isoformat() if page.crawled_at else ""
+                    page.crawled_at.isoformat() if page.crawled_at else "",
+                    clicks,
+                    impressions,
+                    position,
+                    ctr,
+                    top_query
                 ])
 
         print(f"Pages CSV exported to: {output_path}")
@@ -179,6 +335,9 @@ class Exporter:
         # Get domain from first page
         domain = urlparse(pages[0].url).netloc if pages else "Unknown"
 
+        # Get traffic summary
+        traffic_summary = self._get_traffic_summary()
+
         # Start building markdown
         md = []
         md.append(f"# SEO Report of {domain}\n")
@@ -186,6 +345,17 @@ class Exporter:
             md.append(f"**Prepared by:** {self.prepared_by}\n")
         md.append(f"**Generated:** {datetime.utcnow().strftime('%B %d, %Y at %H:%M UTC')}\n")
         md.append("---\n")
+
+        # Traffic Summary (if available)
+        if traffic_summary:
+            md.append("## 📊 Traffic Summary (Google Search Console)\n")
+            date_range = traffic_summary['date_range']
+            md.append(f"**Date Range:** {date_range.get('start', 'N/A')} to {date_range.get('end', 'N/A')}\n")
+            md.append(f"- **Total Clicks:** {traffic_summary['total_clicks']:,}")
+            md.append(f"- **Total Impressions:** {traffic_summary['total_impressions']:,}")
+            md.append(f"- **Average CTR:** {traffic_summary['avg_ctr']:.2f}%")
+            md.append(f"- **Pages with Traffic:** {traffic_summary['pages_with_traffic']:,}\n")
+            md.append("---\n")
 
         # Executive Summary
         md.append("## Executive Summary\n")
@@ -207,43 +377,143 @@ class Exporter:
 
         md.append("---\n")
 
-        # TO-DO LIST
+        # TO-DO LIST (Traffic-Prioritized)
         md.append("## 🎯 Action Items (To-Do List)\n")
         md.append("*Copy this section to track your fixes*\n")
 
-        # Errors (High Priority)
+        # Helper function to add traffic info to issue
+        def add_issue_with_traffic(issue, severity_emoji=""):
+            md.append(f"- [ ] **{issue.issue_type.replace('_', ' ').title()}** {severity_emoji}")
+            md.append(f"  - Page: `{issue.affected_url}`")
+            md.append(f"  - Issue: {issue.description}")
+
+            # Add traffic data if available
+            if issue.affected_url:
+                gsc_data = self._match_gsc_to_page(issue.affected_url)
+                if gsc_data:
+                    md.append(f"  - 📈 **Traffic:** {gsc_data['clicks']:,} clicks/month, Position: {gsc_data['position']:.1f}")
+
+                    # Show top queries
+                    if gsc_data.get('queries'):
+                        top_queries = gsc_data['queries'][:3]
+                        md.append(f"  - 🔍 **Top Queries:**")
+                        for q in top_queries:
+                            md.append(f"    - \"{q['query']}\" (Position {q['position']:.1f}, {q['clicks']} clicks)")
+
+                    # Calculate opportunity
+                    opportunity = self._calculate_opportunity(gsc_data)
+                    if opportunity:
+                        md.append(f"  - 💰 **Opportunity:** {opportunity}")
+
+            if issue.details:
+                md.append(f"  - Details: {self._format_details(issue.details)}")
+            md.append("")
+
+        # Errors (High Priority) - Sort by traffic impact
         if issues_by_severity[Severity.ERROR]:
-            md.append("### High Priority (Errors)\n")
+            # Sort errors by traffic (pages with traffic first)
+            errors_list = issues_by_severity[Severity.ERROR]
+            errors_with_traffic = []
+            errors_without_traffic = []
+
+            for issue in errors_list:
+                if issue.affected_url:
+                    gsc_data = self._match_gsc_to_page(issue.affected_url)
+                    if gsc_data and gsc_data.get('clicks', 0) > 0:
+                        errors_with_traffic.append((issue, gsc_data['clicks']))
+                    else:
+                        errors_without_traffic.append(issue)
+                else:
+                    errors_without_traffic.append(issue)
+
+            # Sort by traffic descending
+            errors_with_traffic.sort(key=lambda x: x[1], reverse=True)
+
+            md.append("### 🔴 High Priority (Errors)\n")
             md.append("*Fix these first - they significantly impact SEO*\n")
-            for i, issue in enumerate(issues_by_severity[Severity.ERROR], 1):
-                md.append(f"- [ ] **{issue.issue_type.replace('_', ' ').title()}**")
-                md.append(f"  - Page: `{issue.affected_url}`")
-                md.append(f"  - Issue: {issue.description}")
-                if issue.details:
-                    md.append(f"  - Details: {self._format_details(issue.details)}")
-                md.append("")
 
-        # Warnings (Medium Priority)
+            # Show high-traffic errors first
+            if errors_with_traffic:
+                md.append("#### High Traffic Pages\n")
+                for issue, clicks in errors_with_traffic:
+                    add_issue_with_traffic(issue, "🚨")
+
+            # Then show other errors
+            if errors_without_traffic:
+                if errors_with_traffic:
+                    md.append("#### Other Pages\n")
+                for issue in errors_without_traffic:
+                    add_issue_with_traffic(issue, "")
+
+            md.append("")
+
+        # Warnings (Medium Priority) - Sort by traffic
         if issues_by_severity[Severity.WARNING]:
-            md.append("### Medium Priority (Warnings)\n")
-            md.append("*Address these to improve SEO performance*\n")
-            for i, issue in enumerate(issues_by_severity[Severity.WARNING], 1):
-                md.append(f"- [ ] **{issue.issue_type.replace('_', ' ').title()}**")
-                md.append(f"  - Page: `{issue.affected_url}`")
-                md.append(f"  - Issue: {issue.description}")
-                if issue.details:
-                    md.append(f"  - Details: {self._format_details(issue.details)}")
-                md.append("")
+            warnings_list = issues_by_severity[Severity.WARNING]
+            warnings_with_traffic = []
+            warnings_without_traffic = []
 
-        # Notices (Low Priority)
+            for issue in warnings_list:
+                if issue.affected_url:
+                    gsc_data = self._match_gsc_to_page(issue.affected_url)
+                    if gsc_data and gsc_data.get('clicks', 0) > 0:
+                        warnings_with_traffic.append((issue, gsc_data['clicks']))
+                    else:
+                        warnings_without_traffic.append(issue)
+                else:
+                    warnings_without_traffic.append(issue)
+
+            warnings_with_traffic.sort(key=lambda x: x[1], reverse=True)
+
+            md.append("### 🟡 Medium Priority (Warnings)\n")
+            md.append("*Address these to improve SEO performance*\n")
+
+            if warnings_with_traffic:
+                md.append("#### High Traffic Pages\n")
+                for issue, clicks in warnings_with_traffic:
+                    add_issue_with_traffic(issue, "⚠️")
+
+            if warnings_without_traffic:
+                if warnings_with_traffic:
+                    md.append("#### Other Pages\n")
+                for issue in warnings_without_traffic:
+                    add_issue_with_traffic(issue, "")
+
+            md.append("")
+
+        # Notices (Low Priority) - Sort by traffic
         if issues_by_severity[Severity.NOTICE]:
-            md.append("### Low Priority (Improvements)\n")
+            notices_list = issues_by_severity[Severity.NOTICE]
+            notices_with_traffic = []
+            notices_without_traffic = []
+
+            for issue in notices_list:
+                if issue.affected_url:
+                    gsc_data = self._match_gsc_to_page(issue.affected_url)
+                    if gsc_data and gsc_data.get('clicks', 0) > 0:
+                        notices_with_traffic.append((issue, gsc_data['clicks']))
+                    else:
+                        notices_without_traffic.append(issue)
+                else:
+                    notices_without_traffic.append(issue)
+
+            notices_with_traffic.sort(key=lambda x: x[1], reverse=True)
+
+            md.append("### 🔵 Low Priority (Improvements)\n")
             md.append("*Nice-to-have optimizations*\n")
-            for i, issue in enumerate(issues_by_severity[Severity.NOTICE], 1):
-                md.append(f"- [ ] **{issue.issue_type.replace('_', ' ').title()}**")
-                md.append(f"  - Page: `{issue.affected_url}`")
-                md.append(f"  - Issue: {issue.description}")
-                md.append("")
+
+            if notices_with_traffic:
+                md.append("#### High Traffic Pages\n")
+                for issue, clicks in notices_with_traffic:
+                    add_issue_with_traffic(issue, "ℹ️")
+
+            if notices_without_traffic:
+                if notices_with_traffic:
+                    md.append("#### Other Pages\n")
+                for issue in notices_without_traffic:
+                    add_issue_with_traffic(issue, "")
+
+            md.append("")
 
         md.append("---\n")
 
@@ -330,6 +600,9 @@ class Exporter:
         # Get domain from first page
         domain = urlparse(pages[0].url).netloc if pages else "Unknown"
 
+        # Get traffic summary
+        traffic_summary = self._get_traffic_summary()
+
         # Build HTML
         html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -344,12 +617,14 @@ class Exporter:
         h1 {{ color: #2c3e50; margin-bottom: 10px; }}
         h2 {{ color: #34495e; margin-top: 30px; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 2px solid #3498db; }}
         h3 {{ color: #7f8c8d; margin-top: 20px; margin-bottom: 10px; }}
+        h4 {{ color: #95a5a6; margin-top: 15px; margin-bottom: 8px; }}
         .meta {{ color: #7f8c8d; margin-bottom: 30px; }}
         .stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin: 20px 0; }}
         .stat-card {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px; text-align: center; }}
         .stat-card.error {{ background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }}
         .stat-card.warning {{ background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%); color: #333; }}
         .stat-card.notice {{ background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); color: #333; }}
+        .stat-card.traffic {{ background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); color: #333; }}
         .stat-number {{ font-size: 36px; font-weight: bold; }}
         .stat-label {{ font-size: 14px; opacity: 0.9; margin-top: 5px; }}
         .health-score {{ font-size: 48px; font-weight: bold; color: #27ae60; text-align: center; margin: 20px 0; }}
@@ -361,6 +636,9 @@ class Exporter:
         .todo-item.warning {{ border-left-color: #f39c12; }}
         .todo-item.notice {{ border-left-color: #3498db; }}
         .todo-item input[type="checkbox"] {{ margin-right: 10px; transform: scale(1.2); }}
+        .traffic-info {{ background: #e8f5e9; padding: 10px; margin: 10px 0; border-radius: 4px; font-size: 14px; }}
+        .queries {{ margin-left: 20px; font-size: 13px; color: #555; }}
+        .opportunity {{ background: #fff3cd; padding: 8px; margin-top: 8px; border-radius: 4px; font-weight: bold; color: #856404; }}
         .badge {{ display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; margin-right: 8px; }}
         .badge.error {{ background: #e74c3c; color: white; }}
         .badge.warning {{ background: #f39c12; color: white; }}
@@ -398,6 +676,22 @@ class Exporter:
                 <div class="stat-number">{notices}</div>
                 <div class="stat-label">Notices</div>
             </div>
+"""
+
+        # Add traffic stats if available
+        if traffic_summary:
+            html += f"""
+            <div class="stat-card traffic">
+                <div class="stat-number">{traffic_summary['total_clicks']:,}</div>
+                <div class="stat-label">Clicks (GSC)</div>
+            </div>
+            <div class="stat-card traffic">
+                <div class="stat-number">{traffic_summary['total_impressions']:,}</div>
+                <div class="stat-label">Impressions (GSC)</div>
+            </div>
+"""
+
+        html += f"""
         </div>
 
         <div class="health-score {'low' if health_score < 50 else 'medium' if health_score < 80 else ''}">
@@ -408,51 +702,141 @@ class Exporter:
         <div class="todo-list">
 """
 
-        # Add errors
+        # Helper function to add issue HTML with traffic data
+        def add_issue_html(issue, severity_class):
+            issue_html = f"""
+            <div class="todo-item {severity_class}">
+                <input type="checkbox" id="{id(issue)}">
+                <label for="{id(issue)}">
+                    <strong>{issue.issue_type.replace('_', ' ').title()}</strong>
+                    <br><code>{issue.affected_url}</code>
+                    <div class="details">{issue.description}</div>
+"""
+
+            # Add traffic data if available
+            if issue.affected_url:
+                gsc_data = self._match_gsc_to_page(issue.affected_url)
+                if gsc_data:
+                    issue_html += f"""
+                    <div class="traffic-info">
+                        📈 <strong>Traffic:</strong> {gsc_data['clicks']:,} clicks/month, Position: {gsc_data['position']:.1f}
+"""
+
+                    # Show top queries
+                    if gsc_data.get('queries'):
+                        issue_html += """<div class="queries">🔍 <strong>Top Queries:</strong><ul>"""
+                        for q in gsc_data['queries'][:3]:
+                            issue_html += f"""<li>"{q['query']}" (Pos {q['position']:.1f}, {q['clicks']} clicks)</li>"""
+                        issue_html += """</ul></div>"""
+
+                    issue_html += """</div>"""
+
+                    # Calculate opportunity
+                    opportunity = self._calculate_opportunity(gsc_data)
+                    if opportunity:
+                        issue_html += f"""<div class="opportunity">💰 Opportunity: {opportunity}</div>"""
+
+            if issue.details:
+                issue_html += f"""<div class="details">{self._format_details(issue.details)}</div>"""
+
+            issue_html += """
+                </label>
+            </div>
+"""
+            return issue_html
+
+        # Add errors (traffic-prioritized)
         if issues_by_severity[Severity.ERROR]:
-            html += f"<h3>🔴 High Priority ({len(issues_by_severity[Severity.ERROR])})</h3>"
-            for issue in issues_by_severity[Severity.ERROR]:
-                html += f"""
-            <div class="todo-item error">
-                <input type="checkbox" id="{id(issue)}">
-                <label for="{id(issue)}">
-                    <strong>{issue.issue_type.replace('_', ' ').title()}</strong>
-                    <br><code>{issue.affected_url}</code>
-                    <div class="details">{issue.description}</div>
-                    {f'<div class="details">{self._format_details(issue.details)}</div>' if issue.details else ''}
-                </label>
-            </div>
-"""
+            errors_list = issues_by_severity[Severity.ERROR]
+            errors_with_traffic = []
+            errors_without_traffic = []
 
-        # Add warnings
+            for issue in errors_list:
+                if issue.affected_url:
+                    gsc_data = self._match_gsc_to_page(issue.affected_url)
+                    if gsc_data and gsc_data.get('clicks', 0) > 0:
+                        errors_with_traffic.append((issue, gsc_data['clicks']))
+                    else:
+                        errors_without_traffic.append(issue)
+                else:
+                    errors_without_traffic.append(issue)
+
+            errors_with_traffic.sort(key=lambda x: x[1], reverse=True)
+
+            html += f"<h3>🔴 High Priority ({len(errors_list)})</h3>"
+
+            if errors_with_traffic:
+                html += "<h4>High Traffic Pages</h4>"
+                for issue, clicks in errors_with_traffic:
+                    html += add_issue_html(issue, "error")
+
+            if errors_without_traffic:
+                if errors_with_traffic:
+                    html += "<h4>Other Pages</h4>"
+                for issue in errors_without_traffic:
+                    html += add_issue_html(issue, "error")
+
+        # Add warnings (traffic-prioritized)
         if issues_by_severity[Severity.WARNING]:
-            html += f"<h3>🟡 Medium Priority ({len(issues_by_severity[Severity.WARNING])})</h3>"
-            for issue in issues_by_severity[Severity.WARNING]:
-                html += f"""
-            <div class="todo-item warning">
-                <input type="checkbox" id="{id(issue)}">
-                <label for="{id(issue)}">
-                    <strong>{issue.issue_type.replace('_', ' ').title()}</strong>
-                    <br><code>{issue.affected_url}</code>
-                    <div class="details">{issue.description}</div>
-                </label>
-            </div>
-"""
+            warnings_list = issues_by_severity[Severity.WARNING]
+            warnings_with_traffic = []
+            warnings_without_traffic = []
 
-        # Add notices
+            for issue in warnings_list:
+                if issue.affected_url:
+                    gsc_data = self._match_gsc_to_page(issue.affected_url)
+                    if gsc_data and gsc_data.get('clicks', 0) > 0:
+                        warnings_with_traffic.append((issue, gsc_data['clicks']))
+                    else:
+                        warnings_without_traffic.append(issue)
+                else:
+                    warnings_without_traffic.append(issue)
+
+            warnings_with_traffic.sort(key=lambda x: x[1], reverse=True)
+
+            html += f"<h3>🟡 Medium Priority ({len(warnings_list)})</h3>"
+
+            if warnings_with_traffic:
+                html += "<h4>High Traffic Pages</h4>"
+                for issue, clicks in warnings_with_traffic:
+                    html += add_issue_html(issue, "warning")
+
+            if warnings_without_traffic:
+                if warnings_with_traffic:
+                    html += "<h4>Other Pages</h4>"
+                for issue in warnings_without_traffic:
+                    html += add_issue_html(issue, "warning")
+
+        # Add notices (traffic-prioritized)
         if issues_by_severity[Severity.NOTICE]:
-            html += f"<h3>🔵 Low Priority ({len(issues_by_severity[Severity.NOTICE])})</h3>"
-            for issue in issues_by_severity[Severity.NOTICE]:
-                html += f"""
-            <div class="todo-item notice">
-                <input type="checkbox" id="{id(issue)}">
-                <label for="{id(issue)}">
-                    <strong>{issue.issue_type.replace('_', ' ').title()}</strong>
-                    <br><code>{issue.affected_url}</code>
-                    <div class="details">{issue.description}</div>
-                </label>
-            </div>
-"""
+            notices_list = issues_by_severity[Severity.NOTICE]
+            notices_with_traffic = []
+            notices_without_traffic = []
+
+            for issue in notices_list:
+                if issue.affected_url:
+                    gsc_data = self._match_gsc_to_page(issue.affected_url)
+                    if gsc_data and gsc_data.get('clicks', 0) > 0:
+                        notices_with_traffic.append((issue, gsc_data['clicks']))
+                    else:
+                        notices_without_traffic.append(issue)
+                else:
+                    notices_without_traffic.append(issue)
+
+            notices_with_traffic.sort(key=lambda x: x[1], reverse=True)
+
+            html += f"<h3>🔵 Low Priority ({len(notices_list)})</h3>"
+
+            if notices_with_traffic:
+                html += "<h4>High Traffic Pages</h4>"
+                for issue, clicks in notices_with_traffic:
+                    html += add_issue_html(issue, "notice")
+
+            if notices_without_traffic:
+                if notices_with_traffic:
+                    html += "<h4>Other Pages</h4>"
+                for issue in notices_without_traffic:
+                    html += add_issue_html(issue, "notice")
 
         html += """
         </div>
