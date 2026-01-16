@@ -8,13 +8,13 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setup(
-    name="seo-audit-engine",
+    name="weve-got-seo-audit-at-home",
     version="0.3.0",
-    author="Your Name",
+    author="Josh Withers",
     description="Local-first SEO website audit tool with Google Search Console integration",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/seo-audit-engine",
+    url="https://github.com/joshwithers/weve-got-seo-audit-at-home",
     packages=find_packages(),
     classifiers=[
         "Development Status :: 3 - Alpha",

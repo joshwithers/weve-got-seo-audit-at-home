@@ -106,12 +106,26 @@ class Database:
                     FOREIGN KEY (url) REFERENCES pages(url)
                 );
 
+                CREATE TABLE IF NOT EXISTS cc_backlinks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    target_domain TEXT NOT NULL,
+                    referring_domain TEXT NOT NULL,
+                    link_count INTEGER DEFAULT 0,
+                    quality_score REAL DEFAULT 0,
+                    vertex_id INTEGER,
+                    graph_date TEXT,
+                    fetched_at TIMESTAMP,
+                    UNIQUE(target_domain, referring_domain, graph_date)
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_pages_url ON pages(url);
                 CREATE INDEX IF NOT EXISTS idx_links_source ON links(source_url);
                 CREATE INDEX IF NOT EXISTS idx_links_target ON links(target_url);
                 CREATE INDEX IF NOT EXISTS idx_issues_url ON issues(affected_url);
                 CREATE INDEX IF NOT EXISTS idx_gsc_page_url ON gsc_page_data(url);
                 CREATE INDEX IF NOT EXISTS idx_gsc_queries_url ON gsc_queries(url);
+                CREATE INDEX IF NOT EXISTS idx_cc_backlinks_target ON cc_backlinks(target_domain);
+                CREATE INDEX IF NOT EXISTS idx_cc_backlinks_quality ON cc_backlinks(quality_score DESC);
             """)
 
     @contextmanager
@@ -399,10 +413,70 @@ class Database:
             row = conn.execute("SELECT COUNT(*) as count FROM gsc_page_data").fetchone()
             return row['count'] > 0
 
+    def save_cc_backlinks(self, target_domain: str, backlinks: list, graph_date: str) -> None:
+        """Save Common Crawl backlinks for a target domain."""
+        with self._connect() as conn:
+            # Clear existing backlinks for this domain/graph
+            conn.execute("""
+                DELETE FROM cc_backlinks
+                WHERE target_domain = ? AND graph_date = ?
+            """, (target_domain, graph_date))
+
+            # Insert new backlinks
+            for bl in backlinks:
+                conn.execute("""
+                    INSERT INTO cc_backlinks (
+                        target_domain, referring_domain, link_count,
+                        quality_score, vertex_id, graph_date, fetched_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    target_domain,
+                    bl['domain'],
+                    bl['link_count'],
+                    bl['quality_score'],
+                    bl.get('vertex_id'),
+                    graph_date,
+                    datetime.utcnow()
+                ))
+
+    def get_cc_backlinks(self, target_domain: str, limit: int = 50) -> list:
+        """Get backlinks for a domain, sorted by quality."""
+        with self._connect() as conn:
+            rows = conn.execute("""
+                SELECT * FROM cc_backlinks
+                WHERE target_domain = ?
+                ORDER BY quality_score DESC, link_count DESC
+                LIMIT ?
+            """, (target_domain, limit)).fetchall()
+
+            return [
+                {
+                    'referring_domain': row['referring_domain'],
+                    'link_count': row['link_count'],
+                    'quality_score': row['quality_score'],
+                    'graph_date': row['graph_date'],
+                    'vertex_id': row['vertex_id']
+                }
+                for row in rows
+            ]
+
+    def has_cc_backlinks(self, target_domain: str = None) -> bool:
+        """Check if backlinks exist for domain (or any domain if None)."""
+        with self._connect() as conn:
+            if target_domain:
+                row = conn.execute("""
+                    SELECT COUNT(*) as count FROM cc_backlinks
+                    WHERE target_domain = ?
+                """, (target_domain,)).fetchone()
+            else:
+                row = conn.execute("SELECT COUNT(*) as count FROM cc_backlinks").fetchone()
+            return row['count'] > 0
+
     def clear_all(self) -> None:
         """Clear all data from the database."""
         with self._connect() as conn:
             conn.executescript("""
+                DELETE FROM cc_backlinks;
                 DELETE FROM gsc_queries;
                 DELETE FROM gsc_page_data;
                 DELETE FROM issues;

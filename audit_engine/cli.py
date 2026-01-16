@@ -14,6 +14,7 @@ from .exporter import Exporter
 from .models import CrawlConfig, CrawlMeta
 from .checks import ALL_CHECKS
 from .gsc_integration import GSCClient
+from .cc_integration import CCClient, load_spam_config, save_spam_config
 
 
 @click.group()
@@ -41,7 +42,9 @@ def cli():
 @click.option('--export-dir', default='.', help='Directory for exports when using --format all (default: current directory)')
 @click.option('--with-gsc', is_flag=True, help='Include Google Search Console traffic data')
 @click.option('--gsc-days', default=90, help='Days of GSC data to fetch (default: 90)')
-def run(url, depth, max_pages, format, output, db, delay, no_robots, business_name, prepared_by, export_dir, with_gsc, gsc_days):
+@click.option('--with-backlinks', is_flag=True, help='Include Common Crawl backlinks data')
+@click.option('--min-backlinks', default=2, help='Minimum links per domain for backlinks (default: 2)')
+def run(url, depth, max_pages, format, output, db, delay, no_robots, business_name, prepared_by, export_dir, with_gsc, gsc_days, with_backlinks, min_backlinks):
     """
     Run a complete audit on a website.
 
@@ -138,6 +141,63 @@ def run(url, depth, max_pages, format, output, db, delay, no_robots, business_na
                 click.echo(f"   Total impressions: {gsc_data['total_impressions']:,}")
             else:
                 click.echo("⚠️  No GSC data found. Continuing without traffic data...")
+
+    # Fetch Common Crawl backlinks if requested
+    if with_backlinks:
+        click.echo("\n=== FETCHING COMMON CRAWL BACKLINKS ===")
+        from urllib.parse import urlparse
+
+        # Extract domain from URL
+        domain = urlparse(url).netloc
+
+        cc = CCClient()
+
+        # Test connection first
+        click.echo("Testing Common Crawl S3 access...")
+        if not cc.test_connection():
+            click.echo("\n❌ Cannot access Common Crawl S3")
+            click.echo("\nPrerequisites:")
+            click.echo("  - AWS CLI must be installed")
+            click.echo("    macOS: brew install awscli")
+            click.echo("    Linux: apt-get install awscli")
+            click.echo("\nTo test: audit cc-auth")
+            click.echo("\n⏭️  Skipping backlinks data. Continuing with audit...")
+        else:
+            # Auto-check for updates
+            new_graph = cc.check_for_updates()
+            if new_graph:
+                click.echo(f"📊 Using graph: {new_graph}")
+
+            # Progress callback
+            def progress(msg):
+                click.echo(f"  {msg}")
+
+            try:
+                backlinks_data = cc.fetch_backlinks(
+                    domain,
+                    quality_filter=True,
+                    min_links=min_backlinks,
+                    progress_callback=progress
+                )
+
+                if 'error' not in backlinks_data:
+                    click.echo(f"\n💾 Saving backlinks to database...")
+                    database.save_cc_backlinks(
+                        domain,
+                        backlinks_data['referring_domains'],
+                        backlinks_data['graph_date']
+                    )
+
+                    click.echo(f"\n✅ Found {backlinks_data['quality_filtered']} quality backlinks")
+                    click.echo(f"   Total referring domains: {backlinks_data['total_backlinks']}")
+                    click.echo(f"   Graph date: {backlinks_data['graph_date']}")
+                else:
+                    click.echo(f"\n⚠️  {backlinks_data['error']}")
+                    if 'suggestion' in backlinks_data:
+                        click.echo(f"   {backlinks_data['suggestion']}")
+            except Exception as e:
+                click.echo(f"\n⚠️  Backlinks fetch failed: {e}")
+                click.echo("Continuing with audit...")
 
     # Run audit checks
     click.echo("\n=== RUNNING AUDIT CHECKS ===")
@@ -368,6 +428,201 @@ def gsc_fetch(url, days, db):
     click.echo(f"   Total clicks: {data['total_clicks']:,}")
     click.echo(f"   Total impressions: {data['total_impressions']:,}")
     click.echo(f"   Date range: {date_range['start']} to {date_range['end']}")
+
+
+@cli.command('cc-auth')
+def cc_auth():
+    """
+    Test Common Crawl S3 access.
+
+    Verifies that AWS CLI is installed and can access Common Crawl data.
+    No authentication required (public data).
+
+    Prerequisites:
+    - AWS CLI must be installed (brew install awscli on macOS)
+
+    Example:
+        audit cc-auth
+    """
+    click.echo("🔍 Testing Common Crawl access...\n")
+
+    # Check AWS CLI installed
+    import subprocess
+    try:
+        result = subprocess.run(['aws', '--version'], capture_output=True, text=True)
+        click.echo(f"✅ AWS CLI found: {result.stdout.strip()}")
+    except FileNotFoundError:
+        click.echo("❌ AWS CLI not found")
+        click.echo("\nInstall AWS CLI:")
+        click.echo("  macOS:   brew install awscli")
+        click.echo("  Linux:   apt-get install awscli")
+        click.echo("  Windows: Download from aws.amazon.com/cli")
+        sys.exit(1)
+
+    # Test S3 access
+    cc = CCClient()
+    if cc.test_connection():
+        click.echo("✅ Common Crawl S3 access working!")
+
+        # Show latest graph info
+        latest_graph = cc._get_latest_graph_id()
+        if latest_graph:
+            click.echo(f"\n📊 Latest graph: {latest_graph}")
+    else:
+        click.echo("❌ Cannot access Common Crawl S3")
+        sys.exit(1)
+
+
+@cli.command('cc-fetch')
+@click.argument('domain')
+@click.option('--db', default='audit.db', help='SQLite database file (default: audit.db)')
+@click.option('--min-links', default=2, help='Minimum links from same domain (default: 2)')
+@click.option('--no-filter', is_flag=True, help='Skip spam filtering')
+def cc_fetch(domain, db, min_links, no_filter):
+    """
+    Fetch Common Crawl backlinks for a domain.
+
+    This will query the Common Crawl hyperlinkgraph and store
+    quality-filtered backlinks in the database.
+
+    Example:
+        audit cc-fetch example.com
+        audit cc-fetch example.com --min-links 5
+        audit cc-fetch marriedbyjosh.com
+    """
+    from urllib.parse import urlparse
+
+    click.echo(f"🔗 Fetching backlinks for: {domain}\n")
+
+    # Extract domain from URL if needed
+    if domain.startswith('http'):
+        domain = urlparse(domain).netloc
+
+    # Initialize client
+    cc = CCClient()
+
+    # Check for updates
+    click.echo("Checking for graph updates...")
+    new_graph = cc.check_for_updates()
+    if new_graph:
+        click.echo(f"📊 Using graph: {new_graph}")
+
+    # Progress indicator
+    def progress(msg):
+        click.echo(f"  {msg}")
+
+    # Fetch backlinks
+    try:
+        data = cc.fetch_backlinks(
+            domain,
+            quality_filter=not no_filter,
+            min_links=min_links,
+            progress_callback=progress
+        )
+    except Exception as e:
+        click.echo(f"❌ Error fetching backlinks: {e}")
+        sys.exit(1)
+
+    if 'error' in data:
+        click.echo(f"❌ {data['error']}")
+        if 'suggestion' in data:
+            click.echo(f"   {data['suggestion']}")
+        sys.exit(1)
+
+    # Save to database
+    database = Database(db)
+    click.echo(f"\n💾 Saving backlinks to database...")
+    database.save_cc_backlinks(domain, data['referring_domains'], data['graph_date'])
+
+    # Summary
+    click.echo(f"\n✅ Found {data['total_backlinks']} referring domains")
+    click.echo(f"   Quality filtered: {data['quality_filtered']} domains")
+    click.echo(f"   Graph date: {data['graph_date']}")
+
+    # Show top 10
+    if data['referring_domains']:
+        click.echo("\n🏆 Top 10 backlinks:")
+        for i, bl in enumerate(data['referring_domains'][:10], 1):
+            click.echo(f"  {i}. {bl['domain']} ({bl['link_count']} links, quality: {bl['quality_score']:.2f})")
+
+
+@cli.command('cc-check-update')
+def cc_check_update():
+    """
+    Check for new Common Crawl graph releases.
+
+    Common Crawl releases new hyperlinkgraphs quarterly.
+    This command checks if a newer graph is available.
+
+    Example:
+        audit cc-check-update
+    """
+    from .cc_integration import GRAPH_METADATA_FILE
+    import json
+
+    click.echo("🔍 Checking for Common Crawl updates...\n")
+
+    cc = CCClient()
+    latest = cc._get_latest_graph_id()
+
+    if not latest:
+        click.echo("❌ Unable to fetch latest graph info")
+        sys.exit(1)
+
+    # Check cached metadata
+    if GRAPH_METADATA_FILE.exists():
+        with open(GRAPH_METADATA_FILE, 'r') as f:
+            cached = json.load(f)
+            cached_graph = cached.get('graph_id')
+
+        if cached_graph == latest:
+            click.echo(f"✅ Using latest graph: {latest}")
+        else:
+            click.echo(f"📊 New graph available!")
+            click.echo(f"   Current: {cached_graph}")
+            click.echo(f"   Latest: {latest}")
+            click.echo("\nRun 'audit cc-fetch' to use the new graph")
+    else:
+        click.echo(f"📊 Latest graph: {latest}")
+        click.echo("\nRun 'audit cc-fetch <domain>' to start using Common Crawl backlinks")
+
+
+@cli.command('cc-config')
+@click.option('--show', is_flag=True, help='Show current configuration')
+@click.option('--reset', is_flag=True, help='Reset to defaults')
+def cc_config(show, reset):
+    """
+    Manage Common Crawl spam filter configuration.
+
+    Configure spam filtering rules for backlink quality filtering.
+    Settings are stored in ~/.seo_audit/cc_cache/spam_filters.json
+
+    Example:
+        audit cc-config --show
+        audit cc-config --reset
+    """
+    from .cc_integration import CACHE_DIR, DEFAULT_SPAM_CONFIG
+
+    config_file = CACHE_DIR / 'spam_filters.json'
+
+    if reset:
+        # Reset to defaults
+        save_spam_config(DEFAULT_SPAM_CONFIG)
+        click.echo(f"✅ Reset configuration to defaults")
+        click.echo(f"   Config file: {config_file}")
+
+    if show or reset:
+        config = load_spam_config()
+        click.echo("\n📋 Current Configuration:\n")
+        click.echo(f"Min Link Count: {config.get('min_link_count', 2)}")
+        click.echo(f"Min Quality Score: {config.get('min_quality_score', 0.3)}")
+        click.echo(f"\nSpam TLDs ({len(config.get('spam_tlds', []))}):")
+        spam_tlds = config.get('spam_tlds', [])
+        click.echo("  " + ", ".join(spam_tlds[:10]) + ("..." if len(spam_tlds) > 10 else ""))
+        click.echo(f"\nSpam Keywords ({len(config.get('spam_keywords', []))}):")
+        spam_keywords = config.get('spam_keywords', [])
+        click.echo("  " + ", ".join(spam_keywords[:10]) + ("..." if len(spam_keywords) > 10 else ""))
+        click.echo(f"\n📝 Edit config: {config_file}")
 
 
 if __name__ == '__main__':

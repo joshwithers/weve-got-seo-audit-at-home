@@ -23,6 +23,8 @@ class Exporter:
         self.prepared_by = prepared_by
         self._gsc_data = None  # Cache GSC data
         self._has_gsc = None   # Cache GSC availability
+        self._backlinks_data = None  # Cache backlinks data
+        self._has_backlinks = None  # Cache backlinks availability
 
     def _has_gsc_data(self) -> bool:
         """Check if GSC data is available."""
@@ -135,6 +137,39 @@ class Exporter:
 
         return None
 
+    def _has_backlinks_data(self, domain: str = None) -> bool:
+        """Check if backlinks data is available."""
+        if self._has_backlinks is None:
+            self._has_backlinks = self.db.has_cc_backlinks(domain)
+        return self._has_backlinks
+
+    def _get_backlinks_data(self, domain: str) -> Optional[dict]:
+        """
+        Get backlinks summary for domain.
+
+        Returns:
+            dict with total_domains, total_links, avg_quality, top_backlinks, graph_date
+        """
+        if not self.db.has_cc_backlinks(domain):
+            return None
+
+        backlinks = self.db.get_cc_backlinks(domain, limit=50)
+
+        if not backlinks:
+            return None
+
+        total = len(backlinks)
+        avg_quality = sum(bl['quality_score'] for bl in backlinks) / total if total > 0 else 0
+        total_links = sum(bl['link_count'] for bl in backlinks)
+
+        return {
+            'total_domains': total,
+            'total_links': total_links,
+            'avg_quality': avg_quality,
+            'top_backlinks': backlinks[:20],
+            'graph_date': backlinks[0]['graph_date'] if backlinks else None
+        }
+
     def export_json(self, output_path: str = "audit_report.json") -> None:
         """
         Export complete audit report as JSON.
@@ -145,14 +180,18 @@ class Exporter:
 
         # Get domain from first page
         domain = pages[0].url if pages else "Unknown"
+        domain_name = urlparse(domain).netloc
 
         # Get traffic summary
         traffic_summary = self._get_traffic_summary()
 
+        # Get backlinks summary
+        backlinks_summary = self._get_backlinks_data(domain_name)
+
         # Build the report structure
         report = {
             "generated_at": datetime.utcnow().isoformat(),
-            "report_title": f"SEO Report of {urlparse(domain).netloc}",
+            "report_title": f"SEO Report of {domain_name}",
             "business_name": self.business_name,
             "prepared_by": self.prepared_by if self.prepared_by else None,
             "summary": {
@@ -161,7 +200,8 @@ class Exporter:
                 "errors": sum(1 for i in issues if i.severity.value == "error"),
                 "warnings": sum(1 for i in issues if i.severity.value == "warning"),
                 "notices": sum(1 for i in issues if i.severity.value == "notice"),
-                "traffic": traffic_summary  # Add GSC summary
+                "traffic": traffic_summary,  # Add GSC summary
+                "backlinks": backlinks_summary  # Add backlinks summary
             },
             "pages": [
                 {
@@ -338,6 +378,9 @@ class Exporter:
         # Get traffic summary
         traffic_summary = self._get_traffic_summary()
 
+        # Get backlinks summary
+        backlinks_summary = self._get_backlinks_data(domain)
+
         # Start building markdown
         md = []
         md.append(f"# SEO Report of {domain}\n")
@@ -356,6 +399,23 @@ class Exporter:
             md.append(f"- **Average CTR:** {traffic_summary['avg_ctr']:.2f}%")
             md.append(f"- **Pages with Traffic:** {traffic_summary['pages_with_traffic']:,}\n")
             md.append("---\n")
+
+        # Backlinks Summary (if available)
+        if backlinks_summary:
+            md.append("## 🔗 Backlink Profile (Common Crawl)\n")
+            md.append(f"**Graph Date:** {backlinks_summary['graph_date']}\n")
+            md.append(f"- **Referring Domains:** {backlinks_summary['total_domains']:,}")
+            md.append(f"- **Total Links:** {backlinks_summary['total_links']:,}")
+            md.append(f"- **Average Quality:** {backlinks_summary['avg_quality']:.2f}/1.0\n")
+
+            md.append("### Top Referring Domains\n")
+            md.append("| Domain | Links | Quality |\n")
+            md.append("|--------|-------|----------|\n")
+
+            for bl in backlinks_summary['top_backlinks'][:20]:
+                md.append(f"| {bl['referring_domain']} | {bl['link_count']} | {bl['quality_score']:.2f} |")
+
+            md.append("\n---\n")
 
         # Executive Summary
         md.append("## Executive Summary\n")
@@ -603,6 +663,9 @@ class Exporter:
         # Get traffic summary
         traffic_summary = self._get_traffic_summary()
 
+        # Get backlinks summary
+        backlinks_summary = self._get_backlinks_data(domain)
+
         # Build HTML
         html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -691,12 +754,54 @@ class Exporter:
             </div>
 """
 
+        # Add backlinks stats if available
+        if backlinks_summary:
+            html += f"""
+            <div class="stat-card traffic">
+                <div class="stat-number">{backlinks_summary['total_domains']:,}</div>
+                <div class="stat-label">Referring Domains</div>
+            </div>
+"""
+
         html += f"""
         </div>
 
         <div class="health-score {'low' if health_score < 50 else 'medium' if health_score < 80 else ''}">
             SEO Health Score: {health_score:.0f}/100
         </div>
+
+"""
+
+        # Add backlinks section if available
+        if backlinks_summary:
+            html += f"""
+        <h2>🔗 Backlink Profile</h2>
+        <p><strong>Data from Common Crawl ({backlinks_summary['graph_date']})</strong></p>
+        <p>Average Quality Score: {backlinks_summary['avg_quality']:.2f}/1.0</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>Referring Domain</th>
+                    <th>Links</th>
+                    <th>Quality Score</th>
+                </tr>
+            </thead>
+            <tbody>
+"""
+            for bl in backlinks_summary['top_backlinks'][:20]:
+                html += f"""
+                <tr>
+                    <td><a href="http://{bl['referring_domain']}" target="_blank" class="url">{bl['referring_domain']}</a></td>
+                    <td>{bl['link_count']}</td>
+                    <td>{bl['quality_score']:.2f}</td>
+                </tr>
+"""
+            html += """
+            </tbody>
+        </table>
+"""
+
+        html += """
 
         <h2>🎯 Action Items</h2>
         <div class="todo-list">
@@ -925,6 +1030,36 @@ class Exporter:
 
         return ", ".join(parts)
 
+    def export_backlinks_csv(self, domain: str, output_path: str = "audit_backlinks.csv") -> None:
+        """Export backlinks as CSV for analysis."""
+        backlinks = self.db.get_cc_backlinks(domain, limit=1000)
+
+        if not backlinks:
+            print("No backlinks data available to export")
+            return
+
+        with open(output_path, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+
+            # Header
+            writer.writerow([
+                "Referring Domain",
+                "Link Count",
+                "Quality Score",
+                "Graph Date"
+            ])
+
+            # Data rows
+            for bl in backlinks:
+                writer.writerow([
+                    bl['referring_domain'],
+                    bl['link_count'],
+                    f"{bl['quality_score']:.2f}",
+                    bl['graph_date']
+                ])
+
+        print(f"Backlinks CSV exported to: {output_path}")
+
     def export_all(self, output_dir: str = ".") -> None:
         """Export all data formats to a directory."""
         output_path = Path(output_dir)
@@ -935,5 +1070,12 @@ class Exporter:
         self.export_html(str(output_path / "audit_report.html"))
         self.export_issues_csv(str(output_path / "audit_issues.csv"))
         self.export_pages_csv(str(output_path / "audit_pages.csv"))
+
+        # Export backlinks if available
+        pages = self.db.get_all_pages()
+        if pages:
+            domain = urlparse(pages[0].url).netloc
+            if self.db.has_cc_backlinks(domain):
+                self.export_backlinks_csv(domain, str(output_path / "audit_backlinks.csv"))
 
         print(f"\nAll reports exported to: {output_dir}")

@@ -16,7 +16,10 @@
       "Bash(tree:*)",
       "Bash(audit gsc-test:*)",
       "Bash(audit gsc-fetch:*)",
-      "Bash(audit clear:*)"
+      "Bash(audit clear:*)",
+      "WebFetch(domain:commoncrawl.org)",
+      "WebSearch",
+      "WebFetch(domain:data.commoncrawl.org)"
     ],
     "deny": [],
     "ask": []
