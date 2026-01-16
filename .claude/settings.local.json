@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir:*)",
+      "Bash(pip install:*)",
+      "Bash(chmod:*)",
+      "Bash(python3:*)",
+      "Bash(source venv/bin/activate)",
+      "Bash(audit --help:*)",
+      "Bash(audit checks)",
+      "Bash(audit run:*)",
+      "Bash(cat:*)",
+      "Bash(audit export:*)",
+      "Bash(./create-release.sh:*)",
+      "Bash(open:*)",
+      "Bash(tree:*)",
+      "Bash(audit gsc-test:*)",
+      "Bash(audit gsc-fetch:*)",
+      "Bash(audit clear:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

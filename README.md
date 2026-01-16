@@ -1,439 +1,297 @@
 # SEO Audit Engine
 
-**Version 0.3.0** - A local-first SEO website audit tool that runs entirely on your machine. No SaaS, no external dependencies, no cloud services (except optional Google Search Console).
+**Version 0.3.0** - A local-first SEO website audit tool with Google Search Console integration.
 
-## Features
+## What It Does
 
+Crawls your website, identifies SEO issues, and generates traffic-prioritized reports using real data from Google Search Console.
+
+**Key Features:**
 - 🏠 **Local-First** - All data stays on your machine
-- 📊 **Google Search Console Integration** - Traffic-prioritized issues (NEW!)
-- 📝 **Multiple Export Formats** - Markdown, HTML, JSON, CSV
-- ✅ **Interactive To-Do Lists** - Track fixes with checkboxes
-- 🎯 **SEO Health Score** - 0-100 rating based on issues
-- 🎨 **Custom Branding** - Add your business name to reports
-- 🚫 **Smart Filtering** - Automatically skips PDFs, XML, etc.
-- 🔧 **CLI-First** - Scriptable and automatable
-- 📦 **SQLite Storage** - Single file database
-- 🔌 **Modular Checks** - Easy to extend
+- 📊 **Traffic-Prioritized** - Fix issues on high-traffic pages first
+- 🔍 **Search Query Analysis** - See what people are searching for
+- 💰 **Opportunity Calculation** - Estimate potential traffic gains
+- 📝 **Multiple Formats** - Markdown, HTML, JSON, CSV
+
+---
 
 ## Quick Start
 
 ### Installation
 
 ```bash
-# Clone or download the project
 cd seo-audit-engine
-
-# Run the install script
 ./install.sh
-
-# Activate virtual environment
 source venv/bin/activate
 ```
 
-### Run Your First Audit
+### Basic Usage
 
 ```bash
-# Basic audit (creates Markdown report with to-do list)
+# Simple audit (no GSC required)
 audit run https://example.com
 
-# With custom branding
-audit run https://example.com \
-  --business-name "Your Company" \
-  --prepared-by "Your Name"
-
-# Generate HTML report
-audit run https://example.com --format html
-
-# All formats at once
-audit run https://example.com --format all
-
-# With Google Search Console (traffic-prioritized!)
+# With Google Search Console traffic data
 audit run https://example.com --with-gsc
+
+# Full site audit
+audit run https://example.com --max-pages 1000 --depth 5 --with-gsc --format html
 ```
-
-## Google Search Console Integration (NEW!)
-
-Connect your Google Search Console to get **traffic-prioritized insights**:
-
-```bash
-# One-time setup (5 minutes)
-audit gsc-auth --credentials /path/to/credentials.json
-
-# Run audit with traffic data
-audit run https://example.com --with-gsc
-```
-
-**What you get:**
-- 📈 **Traffic metrics** - See clicks, impressions, CTR for each page
-- 🔍 **Search queries** - View top keywords driving traffic
-- 🎯 **Prioritized issues** - Fix high-traffic pages first
-- 💰 **Opportunities** - Calculate potential traffic gains
-
-**See:** [GSC_SETUP_GUIDE.md](GSC_SETUP_GUIDE.md) for complete setup instructions.
 
 ---
 
-## What It Does
+## Google Search Console Integration
 
-The tool crawls your website and generates detailed reports with:
+Get traffic-prioritized insights by connecting to Google Search Console.
 
-### Audit Checks (5 Core Checks)
-
-1. **Broken Links** - Finds 404s and unreachable internal links
-2. **Page Titles** - Detects missing, duplicate, too short, or too long titles
-3. **Meta Descriptions** - Identifies missing or problematic meta descriptions
-4. **Headings** - Checks for missing or multiple H1 tags
-5. **Redirects** - Finds redirect chains and loops
-
-### Smart Features
-
-- **File Filtering** - Automatically skips .pdf, .epub, .xml, .txt, .zip files
-- **robots.txt Support** - Respects site crawl rules (configurable)
-- **URL Normalization** - Handles duplicates intelligently
-- **Depth Control** - Configurable crawl depth and page limits
-- **Rate Limiting** - Adjustable delay between requests
-
-## Export Formats
-
-### Markdown (Default) - Perfect for LLMs
+### One-Time Setup (5 minutes)
 
 ```bash
-audit run https://example.com
-# Creates: audit_report.md
+# 1. Authenticate
+audit gsc-auth --credentials /path/to/credentials.json
+
+# 2. Test connection
+audit gsc-test
 ```
 
-**Best for:**
-- Feeding to ChatGPT/Claude for specific fix instructions
-- Tracking progress with GitHub-style checkboxes
-- Version control (commit to git)
-- Human-readable documentation
+**See [GSC_SETUP_GUIDE.md](GSC_SETUP_GUIDE.md) for complete instructions.**
 
-**Format includes:**
-- Domain-specific title: "SEO Report of example.com"
-- Executive summary with SEO Health Score
-- Prioritized to-do list (High/Medium/Low priority)
-- Issue breakdown by type
-- Page inventory table
+### What You Get
 
-### HTML - Interactive Browser Report
+**Without GSC:**
+- List of all SEO issues
+- Issues sorted by severity (errors, warnings, notices)
 
-```bash
-audit run https://example.com --format html
-# Creates: audit_report.html
+**With GSC (`--with-gsc`):**
+- Issues prioritized by actual traffic
+- Top search queries per page
+- Traffic opportunities ("Fix this = +X clicks/month")
+- Overall traffic summary
+
+**Example Report:**
+```markdown
+## High Priority Issues
+
+### High Traffic Pages
+
+- Missing Title on /popular-page/
+  Traffic: 1,234 clicks/month, Position: 5.2
+  Top Queries: "keyword 1", "keyword 2"
+  Opportunity: +370 clicks/month if moved to top 3
 ```
 
-**Best for:**
-- Client presentations
-- Visual tracking (checkboxes save state in browser)
-- Shareable reports
-- Print to PDF
-
-**Features:**
-- Color-coded severity indicators (red/yellow/blue)
-- Interactive checkboxes with localStorage
-- SEO Health Score visualization
-- Responsive design
-
-### JSON - Machine Readable
-
-```bash
-audit run https://example.com --format json
-# Creates: audit_report.json
-```
-
-**Best for:**
-- API integrations
-- Automated processing
-- Data pipelines
-
-### CSV - Spreadsheet Analysis
-
-```bash
-audit run https://example.com --format csv
-# Creates: audit_issues.csv, audit_pages.csv
-```
-
-**Best for:**
-- Excel/Google Sheets analysis
-- Filtering and sorting
-- Pivot tables
-
-### All Formats
-
-```bash
-audit run https://example.com --format all
-# Creates: .md, .html, .json, .csv files
-```
-
-## Custom Branding
-
-Add your business name and personal credit to all reports:
-
-```bash
-audit run https://example.com \
-  --business-name "Josh's SEO Services" \
-  --prepared-by "Josh Withers"
-```
-
-**Appears in reports as:**
-- Header: "SEO Report of example.com"
-- Subheader: "Prepared by: Josh Withers"
-- Footer: "Report generated by Josh's SEO Services"
+---
 
 ## CLI Reference
 
 ### Main Commands
 
 ```bash
-# Run audit
-audit run <url> [OPTIONS]
-
-# Export from existing database
-audit export [OPTIONS]
-
-# List available checks
-audit checks
-
-# Clear database
-audit clear
+audit run <url> [OPTIONS]          # Run complete audit
+audit export [OPTIONS]              # Export from existing data
+audit checks                        # List available checks
+audit clear                         # Clear database
 
 # Google Search Console
-audit gsc-auth --credentials <path>  # One-time authentication
-audit gsc-test                       # Test GSC connection
-audit gsc-fetch <url>                # Fetch traffic data separately
-
-# Show help
-audit --help
-audit run --help
+audit gsc-auth --credentials <path> # One-time authentication
+audit gsc-test                      # Test GSC connection
+audit gsc-fetch <url>               # Fetch traffic data separately
 ```
 
-### Options
+### Common Options
 
 ```bash
---depth N                # Maximum crawl depth (default: 3)
---max-pages N           # Maximum pages to crawl (default: 1000)
---format FORMAT         # Output format: markdown, html, json, csv, all (default: markdown)
---output FILE           # Custom output file path
---business-name NAME    # Business name for report credits
---prepared-by NAME      # Name of person/team preparing report
---delay SECONDS         # Delay between requests (default: 0.5)
---no-robots             # Ignore robots.txt
---db FILE               # Custom database file (default: audit.db)
---with-gsc              # Include Google Search Console traffic data
---gsc-days N            # Days of GSC data to fetch (default: 90)
+--max-pages N       # Maximum pages to crawl (default: 1000)
+--depth N           # Maximum crawl depth (default: 3)
+--format FORMAT     # Output: markdown, html, json, csv, all
+--with-gsc          # Include Google Search Console data
+--gsc-days N        # Days of GSC data (default: 90)
+--business-name     # Your business name for reports
+--prepared-by       # Your name for reports
 ```
 
 ### Examples
 
 ```bash
-# Deep crawl with custom branding
-audit run https://example.com \
-  --depth 5 \
-  --max-pages 500 \
+# Deep crawl with traffic data
+audit run https://example.com --max-pages 5000 --depth 10 --with-gsc
+
+# Quick check (50 pages, 3 levels deep)
+audit run https://example.com --max-pages 50
+
+# All formats with branding
+audit run https://example.com --format all \
   --business-name "Your Company" \
   --prepared-by "Your Name"
 
-# HTML report for client
-audit run https://clientsite.com \
-  --format html \
-  --output client_report.html \
-  --business-name "Your Agency"
-
-# Export existing audit in different format
-audit export --format markdown --prepared-by "John Smith"
-
-# Quick audit (small site)
-audit run https://example.com --depth 2 --max-pages 50
-
-# Ignore robots.txt (for owned sites)
-audit run https://mysite.com --no-robots
-
-# Slow crawl for production sites
-audit run https://example.com --delay 2.0
+# Domain property (for GSC)
+audit gsc-fetch sc-domain:example.com
 ```
-
-## Using with LLMs
-
-The Markdown format is optimized for feeding to AI assistants:
-
-1. **Run audit:**
-   ```bash
-   audit run https://yoursite.com
-   ```
-
-2. **Copy `audit_report.md` content to Claude/ChatGPT**
-
-3. **Example prompts:**
-   ```
-   "Based on this SEO audit, generate specific HTML fixes
-   for all missing title tags"
-
-   "Create a 2-week action plan to fix these issues,
-   prioritized by impact"
-
-   "Generate unique meta descriptions for all pages
-   missing them, 120-160 characters each"
-
-   "Write a client-friendly summary of these issues
-   and recommended fixes"
-   ```
-
-## File Filtering
-
-The crawler automatically skips these file types:
-- `.pdf` - PDF documents
-- `.epub` - E-books
-- `.xml` - XML files (RSS, sitemaps)
-- `.txt` - Text files
-- `.zip`, `.gz`, `.tar` - Archives
-
-You'll see: `Skipping https://example.com/file.pdf (excluded file type)`
-
-## Architecture
-
-```
-audit_engine/
-├── cli.py              # CLI interface
-├── crawler.py          # Web crawler
-├── database.py         # SQLite operations
-├── models.py           # Data models
-├── exporter.py         # Export functionality
-└── checks/             # Audit checks
-    ├── base.py
-    ├── broken_links.py
-    ├── titles.py
-    ├── meta_description.py
-    ├── headings.py
-    └── redirects.py
-```
-
-## Requirements
-
-- Python 3.11 or higher
-- pip (for installing dependencies)
-- Internet connection (for crawling)
-
-## Installation from Source
-
-```bash
-# Manual install
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-pip install -e .
-```
-
-## Database
-
-All data is stored in SQLite (`audit.db` by default):
-
-- **pages** - Crawled pages and SEO data
-- **links** - Internal/external links
-- **issues** - Audit findings
-- **crawl_meta** - Session metadata
-
-You can query the database directly:
-```bash
-sqlite3 audit.db "SELECT url, title FROM pages WHERE status_code = 200"
-```
-
-## Adding Custom Checks
-
-1. Create a new file in `audit_engine/checks/`
-2. Inherit from `BaseCheck`
-3. Implement `name`, `description`, and `run()` methods
-4. Add to `ALL_CHECKS` in `audit_engine/checks/__init__.py`
-
-Example:
-```python
-from .base import BaseCheck
-from ..models import Issue, Severity
-
-class MyCheck(BaseCheck):
-    @property
-    def name(self) -> str:
-        return "My Custom Check"
-
-    @property
-    def description(self) -> str:
-        return "Description of what this check does"
-
-    def run(self) -> List[Issue]:
-        issues = []
-        pages = self.db.get_all_pages()
-
-        for page in pages:
-            # Your check logic here
-            if condition:
-                issues.append(Issue(
-                    issue_type="my_issue",
-                    severity=Severity.WARNING,
-                    description="Issue description",
-                    affected_url=page.url
-                ))
-
-        return issues
-```
-
-## Limitations
-
-By design (MVP scope):
-- No JavaScript rendering
-- No Core Web Vitals measurement
-- No backlink analysis
-- Single-threaded crawling
-- No external API integrations
-
-## Troubleshooting
-
-### Command Not Found
-```bash
-# Make sure virtual environment is activated
-source venv/bin/activate
-```
-
-### Crawl Too Slow
-```bash
-# Reduce depth or page limit
-audit run https://example.com --depth 2 --max-pages 100
-```
-
-### Database Locked
-```bash
-# Clear the database
-audit clear
-```
-
-## What's New in v0.2.0
-
-- ✨ Markdown & HTML export formats
-- ✅ Interactive to-do lists with checkboxes
-- 📊 SEO Health Score
-- 🎨 Custom branding (business name & prepared by)
-- 🚫 Automatic file filtering (.pdf, .xml, etc.)
-- 📝 Reports optimized for LLMs
-- 🎯 Prioritized action items
-
-See [CHANGELOG.md](CHANGELOG.md) for full details.
-
-## License
-
-MIT License - See [LICENSE](LICENSE) file
-
-## Support
-
-- **Issues:** Report bugs or request features via GitHub issues
-- **Documentation:** This README covers all features
-- **Source Code:** Readable, well-commented Python
-
-## Credits
-
-- **Created by:** SEO Audit Engine Team
-- **Version:** 0.2.0
-- **License:** MIT
 
 ---
 
-**Ready to improve your SEO!** 🚀
+## What Gets Checked
 
-Run `audit run https://yoursite.com` to get started.
+### SEO Audit Checks
+
+1. **Broken Links** - 404s and unreachable URLs
+2. **Page Titles** - Missing, duplicate, too short/long
+3. **Meta Descriptions** - Missing or problematic descriptions
+4. **Headings Structure** - Missing or multiple H1 tags
+5. **Redirects** - Redirect chains and loops
+
+### Smart Features
+
+- **File Filtering** - Automatically skips .pdf, .xml, .txt, etc.
+- **robots.txt Support** - Respects crawl rules
+- **URL Normalization** - Handles duplicates intelligently
+- **Rate Limiting** - Configurable delays between requests
+
+---
+
+## Export Formats
+
+### Markdown (Default)
+```bash
+audit run <url>
+# Creates: audit_report.md
+```
+- GitHub-style checkboxes
+- Traffic metrics and top queries
+- Perfect for feeding to ChatGPT/Claude
+
+### HTML
+```bash
+audit run <url> --format html
+```
+- Interactive checkboxes (saves state)
+- Color-coded severity
+- Client-ready reports
+
+### JSON
+```bash
+audit run <url> --format json
+```
+- Machine-readable
+- Full data structure
+- API integrations
+
+### CSV
+```bash
+audit run <url> --format csv
+```
+- Excel/Google Sheets
+- Filtering and sorting
+- Includes traffic columns
+
+---
+
+## Traffic Prioritization
+
+When using `--with-gsc`, reports automatically:
+
+1. **Sort by Traffic** - High-traffic pages shown first
+2. **Show Top Queries** - See what people search for
+3. **Calculate Opportunities** - Estimate traffic gains
+4. **Add Traffic Summary** - Overall site metrics
+
+**Example:**
+```
+Issue: Missing title on /blog/article/
+Traffic: 890 clicks/month
+Position: 5.2
+Top Query: "wedding budget" (320 clicks)
+Opportunity: +450 clicks/month if moved to top 3
+```
+
+---
+
+## Common Issues
+
+### "Only 100 pages crawled"
+```bash
+# Increase depth to reach more pages
+audit run <url> --depth 5
+
+# Or increase page limit
+audit run <url> --max-pages 5000
+```
+
+### "Not authenticated with GSC"
+```bash
+# When using --with-gsc, authenticate first
+audit gsc-auth --credentials /path/to/credentials.json
+
+# Or authenticate during audit (you'll be prompted)
+```
+
+### "No GSC data found"
+- Verify site is in Search Console
+- Use correct property format:
+  - Domain property: `sc-domain:example.com`
+  - URL prefix: `https://example.com`
+
+---
+
+## Files and Data
+
+### Generated Files
+- `audit.db` - SQLite database with all crawl data
+- `audit_report.md/html/json` - Report files
+- `audit_issues.csv` - Issues spreadsheet
+- `audit_pages.csv` - Pages spreadsheet
+
+### Stored Data
+- `~/.seo_audit/gsc_token.pickle` - GSC authentication token
+- `~/.seo_audit/gsc_credentials.json` - GSC OAuth credentials
+
+---
+
+## Documentation
+
+- **README.md** (this file) - Main documentation
+- **GSC_SETUP_GUIDE.md** - Complete GSC setup walkthrough
+- **CHANGELOG.md** - Version history
+- **docs/** - Development and implementation notes
+
+---
+
+## Version History
+
+### 0.3.0 (2026-01-15)
+- Google Search Console integration
+- Traffic-prioritized reporting
+- Search query analysis
+- Opportunity calculations
+- All export formats enhanced
+
+### 0.2.0 (2026-01-15)
+- Markdown/HTML exports with to-do lists
+- SEO Health Score (0-100)
+- Custom branding
+- File extension filtering
+
+### 0.1.0 (2026-01-15)
+- Initial release
+- Core crawling engine
+- 5 audit checks
+- JSON/CSV exports
+
+**See [CHANGELOG.md](CHANGELOG.md) for complete history.**
+
+---
+
+## License
+
+[Your License Here]
+
+## Support
+
+For issues or questions:
+1. Check this README
+2. See GSC_SETUP_GUIDE.md for GSC setup
+3. Review docs/ folder for implementation details
+
+---
+
+**Built for SEO professionals who want to do great work for their clients.**

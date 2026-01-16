@@ -98,9 +98,24 @@ def run(url, depth, max_pages, format, output, db, delay, no_robots, business_na
         click.echo("\n=== FETCHING GOOGLE SEARCH CONSOLE DATA ===")
         gsc = GSCClient()
         if not gsc.authenticate():
-            click.echo("⚠️  GSC authentication failed. Run 'audit gsc-auth' first.")
-            click.echo("    Continuing without GSC data...")
-        else:
+            click.echo("\n⚠️  Not authenticated with Google Search Console")
+            click.echo("\nTo use --with-gsc, you need to authenticate first:")
+            click.echo("1. Get OAuth credentials from Google Cloud Console")
+            click.echo("2. Run: audit gsc-auth --credentials /path/to/credentials.json")
+            click.echo("\nSee GSC_SETUP_GUIDE.md for detailed instructions.")
+
+            if click.confirm("\nDo you want to authenticate now?", default=False):
+                creds_path = click.prompt("Enter path to credentials JSON file", type=str)
+                if gsc.authenticate(creds_path):
+                    click.echo("✅ Authentication successful! Continuing with GSC data...")
+                else:
+                    click.echo("❌ Authentication failed. Continuing without GSC data...")
+                    gsc = None
+            else:
+                click.echo("⏭️  Skipping GSC data. Continuing with audit...")
+                gsc = None
+
+        if gsc:
             gsc_data = gsc.fetch_data(url, days=gsc_days)
 
             if gsc_data and gsc_data.get('pages'):

@@ -1,15 +1,31 @@
-*.pyc
+# Python
 __pycache__/
-*.db
-*.sqlite
-*.sqlite3
-.DS_Store
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
 *.egg-info/
 dist/
 build/
-.venv/
-venv/
-.env
-*.csv
-*.json
-!schema.sql
+
+# Audit outputs
+audit.db
+audit_report.*
+audit_issues.csv
+audit_pages.csv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# GSC credentials (keep these private!)
+gsc_credentials.json
