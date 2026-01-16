@@ -4,8 +4,6 @@
 
 **Version 0.4.0** - A local-first SEO website audit tool with Google Search Console integration.
 
-## What It Does
-
 Crawls your website, identifies SEO issues, and generates traffic-prioritized reports using real data from Google Search Console.
 
 **Key Features:**
@@ -13,6 +11,7 @@ Crawls your website, identifies SEO issues, and generates traffic-prioritized re
 - 📊 **Traffic-Prioritized** - Fix issues on high-traffic pages first
 - 🔍 **Search Query Analysis** - See what people are searching for
 - 💰 **Opportunity Calculation** - Estimate potential traffic gains
+- 🔒 **Infrastructure Checks** - SSL, robots.txt, sitemap, email deliverability
 - 📝 **Multiple Formats** - Markdown, HTML, JSON, CSV
 
 ---
@@ -42,45 +41,37 @@ audit run https://example.com --max-pages 1000 --depth 5 --with-gsc --format htm
 
 ---
 
-## Google Search Console Integration
+## What Gets Checked
 
-Get traffic-prioritized insights by connecting to Google Search Console.
+### 1. Broken Links
+- 404 errors
+- Unreachable URLs
+- Only reports actionable issues (excludes uncrawled pages outside depth limit)
 
-### One-Time Setup (5 minutes)
+### 2. Page Titles
+- Missing titles
+- Duplicate titles
+- Title length (too short/long)
 
-```bash
-# 1. Authenticate
-audit gsc-auth --credentials /path/to/credentials.json
+### 3. Meta Descriptions
+- Missing descriptions
+- Duplicate descriptions
+- Description length
 
-# 2. Test connection
-audit gsc-test
-```
+### 4. Headings Structure
+- Missing H1 tags
+- Multiple H1 tags per page
 
-**See [GSC_SETUP_GUIDE.md](GSC_SETUP_GUIDE.md) for complete instructions.**
+### 5. Redirects
+- Redirect chains
+- Redirect loops
 
-### What You Get
-
-**Without GSC:**
-- List of all SEO issues
-- Issues sorted by severity (errors, warnings, notices)
-
-**With GSC (`--with-gsc`):**
-- Issues prioritized by actual traffic
-- Top search queries per page
-- Traffic opportunities ("Fix this = +X clicks/month")
-- Overall traffic summary
-
-**Example Report:**
-```markdown
-## High Priority Issues
-
-### High Traffic Pages
-
-- Missing Title on /popular-page/
-  Traffic: 1,234 clicks/month, Position: 5.2
-  Top Queries: "keyword 1", "keyword 2"
-  Opportunity: +370 clicks/month if moved to top 3
-```
+### 6. Infrastructure & Security
+- **SSL Certificate** - Validates HTTPS, checks expiration dates (warns if <30 days)
+- **Robots.txt Crawl Permissions** - Reports if your site allows search engine crawling
+- **AI/LLM Crawler Permissions** - Identifies blocked/allowed AI crawlers (GPTBot, Claude-Web, Anthropic-AI, etc.)
+- **Sitemap Availability** - Tests common sitemap locations and robots.txt declarations
+- **Email Deliverability** - Validates SPF and DMARC records for domain reputation
 
 ---
 
@@ -132,32 +123,102 @@ audit gsc-fetch sc-domain:example.com
 
 ---
 
-## What Gets Checked
+## Google Search Console Integration
 
-### SEO Audit Checks
+Get traffic-prioritized insights by connecting to Google Search Console.
 
-1. **Broken Links** - 404s and unreachable URLs
-2. **Page Titles** - Missing, duplicate, too short/long
-3. **Meta Descriptions** - Missing or problematic descriptions
-4. **Headings Structure** - Missing or multiple H1 tags
-5. **Redirects** - Redirect chains and loops
-6. **Infrastructure & Security** - SSL certificates, robots.txt, sitemap, email deliverability
+### Setup (5 minutes)
 
-### Infrastructure & Security Details
+#### Step 1: Create Google Cloud Project
 
-The infrastructure check verifies:
-- **SSL Certificate** - Validates HTTPS, checks expiration dates
-- **Robots.txt Crawl Permissions** - Reports if your site allows search engine crawling
-- **AI/LLM Crawler Permissions** - Identifies blocked/allowed AI crawlers (GPTBot, Claude-Web, etc.)
-- **Sitemap Availability** - Tests common sitemap locations and robots.txt declarations
-- **Email Deliverability** - Validates SPF and DMARC records for domain reputation
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Click **"Select a project"** → **"New Project"**
+3. Name it `"SEO Audit Tool"` and click **"Create"**
 
-### Smart Features
+#### Step 2: Enable Search Console API
 
-- **File Filtering** - Automatically skips .pdf, .xml, .txt, etc.
-- **robots.txt Support** - Respects crawl rules
-- **URL Normalization** - Handles duplicates intelligently
-- **Rate Limiting** - Configurable delays between requests
+1. Go to **"APIs & Services"** → **"Library"**
+2. Search for `"Google Search Console API"`
+3. Click **"Enable"**
+
+#### Step 3: Create OAuth Credentials
+
+1. Go to **"APIs & Services"** → **"OAuth consent screen"**
+2. Select **"External"** and click **"Create"**
+3. Fill in:
+   - **App name:** `"SEO Audit Tool"`
+   - **User support email:** Your email
+   - **Developer contact email:** Your email
+4. Click through the remaining screens (no changes needed)
+5. On **"Test users"**, add your Google email
+
+6. Go to **"APIs & Services"** → **"Credentials"**
+7. Click **"+ Create Credentials"** → **"OAuth client ID"**
+8. **Application type:** **"Desktop app"**
+9. **Name:** `"SEO Audit CLI"`
+10. Click **"Create"** and **"Download JSON"**
+
+#### Step 4: Authenticate
+
+```bash
+# Save credentials
+mkdir -p ~/.seo_audit
+mv ~/Downloads/client_secret_*.json ~/.seo_audit/gsc_credentials.json
+
+# Authenticate
+audit gsc-auth --credentials ~/.seo_audit/gsc_credentials.json
+```
+
+A browser will open:
+1. Log in with your Google account
+2. Click **"Advanced"** → **"Go to SEO Audit Tool (unsafe)"**
+3. Click **"Continue"**
+4. Close the browser when done
+
+#### Step 5: Test Connection
+
+```bash
+audit gsc-test
+```
+
+You should see your connected sites listed.
+
+### What You Get
+
+**Without GSC:**
+- List of all SEO issues
+- Issues sorted by severity (errors, warnings, notices)
+
+**With GSC (`--with-gsc`):**
+- Issues prioritized by actual traffic
+- Top search queries per page
+- Traffic opportunities ("Fix this = +X clicks/month")
+- Overall traffic summary
+
+**Example Report:**
+```markdown
+## High Priority Issues
+
+### High Traffic Pages
+
+- Missing Title on /popular-page/
+  Traffic: 1,234 clicks/month, Position: 5.2
+  Top Queries: "keyword 1", "keyword 2"
+  Opportunity: +370 clicks/month if moved to top 3
+```
+
+### Usage
+
+```bash
+# Fetch GSC data during audit
+audit run https://example.com --with-gsc
+
+# Fetch GSC data separately
+audit gsc-fetch https://example.com --days 180
+
+# Custom date range
+audit run https://example.com --with-gsc --gsc-days 30
+```
 
 ---
 
@@ -171,6 +232,7 @@ audit run <url>
 - GitHub-style checkboxes
 - Traffic metrics and top queries
 - Perfect for feeding to ChatGPT/Claude
+- **All issues listed** - no truncation
 
 ### HTML
 ```bash
@@ -192,33 +254,19 @@ audit run <url> --format json
 ```bash
 audit run <url> --format csv
 ```
-- Excel/Google Sheets
+- Excel/Google Sheets compatible
 - Filtering and sorting
 - Includes traffic columns
 
----
-
-## Traffic Prioritization
-
-When using `--with-gsc`, reports automatically:
-
-1. **Sort by Traffic** - High-traffic pages shown first
-2. **Show Top Queries** - See what people search for
-3. **Calculate Opportunities** - Estimate traffic gains
-4. **Add Traffic Summary** - Overall site metrics
-
-**Example:**
+### All Formats
+```bash
+audit run <url> --format all --export-dir ./reports
 ```
-Issue: Missing title on /blog/article/
-Traffic: 890 clicks/month
-Position: 5.2
-Top Query: "wedding budget" (320 clicks)
-Opportunity: +450 clicks/month if moved to top 3
-```
+Exports JSON, Markdown, HTML, and CSV files to the specified directory.
 
 ---
 
-## Common Issues
+## Troubleshooting
 
 ### "Only 100 pages crawled"
 ```bash
@@ -238,10 +286,24 @@ audit gsc-auth --credentials /path/to/credentials.json
 ```
 
 ### "No GSC data found"
-- Verify site is in Search Console
+- Verify site is in Search Console: https://search.google.com/search-console
 - Use correct property format:
   - Domain property: `sc-domain:example.com`
   - URL prefix: `https://example.com`
+- Wait 24-48 hours after adding site for data to appear
+
+### "Credentials file not found"
+```bash
+# Check if file exists
+ls ~/.seo_audit/gsc_credentials.json
+
+# If not, re-download from Google Cloud Console
+```
+
+### Rate Limit Errors
+- GSC API has quota limits (1,200 requests/minute)
+- Wait a few minutes and try again
+- For large sites, use `--gsc-days 30` to fetch less data
 
 ---
 
@@ -259,59 +321,114 @@ audit gsc-auth --credentials /path/to/credentials.json
 
 ---
 
-## Documentation
+## FAQ
 
-- **README.md** (this file) - Main documentation
-- **GSC_SETUP_GUIDE.md** - Complete GSC setup walkthrough
-- **CHANGELOG.md** - Version history
-- **docs/** - Development and implementation notes
+### How often should I refresh GSC data?
+GSC data is typically 2-3 days delayed. Refresh weekly or before important audits.
+
+### Can I use this for multiple websites?
+Yes! Each website can have its own database:
+
+```bash
+audit run https://site1.com --db site1.db --with-gsc
+audit run https://site2.com --db site2.db --with-gsc
+```
+
+### Does this work with domain properties?
+Yes! Use the `sc-domain:` format:
+
+```bash
+audit gsc-fetch sc-domain:example.com
+```
+
+### How much data is fetched?
+By default:
+- Last 90 days of traffic data
+- All pages with traffic (up to 25,000)
+- Top 25 queries per page (for top 100 pages)
+
+### Is my data secure?
+Yes:
+- Token stored locally: `~/.seo_audit/gsc_token.pickle`
+- No data sent to external servers
+- All processing happens on your machine
+
+### Can I revoke access?
+Yes:
+1. Go to https://myaccount.google.com/permissions
+2. Find "SEO Audit Tool"
+3. Click "Remove Access"
+
+Then delete the local token:
+```bash
+rm ~/.seo_audit/gsc_token.pickle
+```
 
 ---
 
-## Version History
+## Advanced Usage
 
-### 0.4.0 (2026-01-17)
-- Infrastructure & Security checks
-- SSL certificate validation with expiration warnings
-- Robots.txt crawl permission reporting
-- AI/LLM crawler detection and reporting
-- Sitemap availability checks
-- Email deliverability (SPF/DMARC) validation
+### Custom Date Ranges
 
-### 0.3.0 (2026-01-15)
-- Google Search Console integration
-- Traffic-prioritized reporting
-- Search query analysis
-- Opportunity calculations
-- All export formats enhanced
+```bash
+# Last 30 days (faster, less data)
+audit run https://example.com --with-gsc --gsc-days 30
 
-### 0.2.0 (2026-01-15)
-- Markdown/HTML exports with to-do lists
-- SEO Health Score (0-100)
-- Custom branding
-- File extension filtering
+# Last 180 days (6 months)
+audit run https://example.com --with-gsc --gsc-days 180
 
-### 0.1.0 (2026-01-15)
-- Initial release
-- Core crawling engine
-- 5 audit checks
-- JSON/CSV exports
+# Maximum: 16 months (GSC retention limit)
+audit run https://example.com --with-gsc --gsc-days 480
+```
 
-**See [CHANGELOG.md](CHANGELOG.md) for complete history.**
+### Workflow for Regular Audits
+
+```bash
+#!/bin/bash
+# weekly-audit.sh
+
+SITE="https://example.com"
+DB="audit.db"
+OUTPUT_DIR="./reports/$(date +%Y-%m-%d)"
+
+# Clear old data
+audit clear --db $DB
+
+# Run fresh audit with GSC
+audit run $SITE \
+  --db $DB \
+  --with-gsc \
+  --gsc-days 90 \
+  --format all \
+  --export-dir $OUTPUT_DIR \
+  --prepared-by "SEO Team"
+
+echo "✓ Reports saved to: $OUTPUT_DIR"
+```
+
+### Separate Crawl and Export
+
+For large sites, separate crawling and exporting:
+
+```bash
+# 1. Crawl (takes time)
+audit run https://bigsite.com --db bigsite.db
+
+# 2. Fetch GSC data
+audit gsc-fetch https://bigsite.com --db bigsite.db
+
+# 3. Export reports (instant)
+audit export --db bigsite.db --format markdown
+audit export --db bigsite.db --format html
+audit export --db bigsite.db --format csv
+```
 
 ---
 
 ## License
 
-[Your License Here]
-
-## Support
-
-For issues or questions:
-1. Check this README
-2. See GSC_SETUP_GUIDE.md for GSC setup
-3. Review docs/ folder for implementation details
+MIT License
 
 ---
 
-**Built for SEO professionals who want to do great work for their clients.**
+**Built for SEO professionals who want local-first, traffic-prioritized website audits.**

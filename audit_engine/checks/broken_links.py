@@ -41,19 +41,7 @@ class BrokenLinksCheck(BaseCheck):
 
             # Only check internal links or external links we've crawled
             if link.link_type == LinkType.INTERNAL:
-                if target_status is None:
-                    # Internal link not found in crawl (possibly excluded by depth/robots.txt)
-                    issues.append(Issue(
-                        issue_type="broken_link",
-                        severity=Severity.WARNING,
-                        description=f"Internal link points to uncrawled URL",
-                        affected_url=link.source_url,
-                        details={
-                            "target_url": link.target_url,
-                            "link_text": link.link_text
-                        }
-                    ))
-                elif target_status == 404:
+                if target_status == 404:
                     # Internal link points to 404
                     issues.append(Issue(
                         issue_type="broken_link",

@@ -9,7 +9,6 @@ env/
 *.egg-info/
 dist/
 build/
-docs/
 
 # Audit outputs
 audit.db

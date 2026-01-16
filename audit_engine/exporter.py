@@ -190,7 +190,7 @@ class Exporter:
 
         # Build the report structure
         report = {
-            "generated_at": datetime.utcnow().isoformat(),
+            "generated_at": datetime.now().isoformat(),
             "report_title": f"SEO Report of {domain_name}",
             "business_name": self.business_name,
             "prepared_by": self.prepared_by if self.prepared_by else None,
@@ -386,7 +386,7 @@ class Exporter:
         md.append(f"# SEO Report of {domain}\n")
         if self.prepared_by:
             md.append(f"**Prepared by:** {self.prepared_by}\n")
-        md.append(f"**Generated:** {datetime.utcnow().strftime('%B %d, %Y at %H:%M UTC')}\n")
+        md.append(f"**Generated:** {datetime.now().strftime('%B %d, %Y at %H:%M')}\n")
         md.append("---\n")
 
         # Traffic Summary (if available)
@@ -583,13 +583,10 @@ class Exporter:
             count = len(type_issues)
             md.append(f"### {issue_type.replace('_', ' ').title()} ({count})\n")
 
-            # Show up to 5 examples
-            for issue in type_issues[:5]:
+            # Show all issues
+            for issue in type_issues:
                 md.append(f"- `{issue.affected_url}`")
                 md.append(f"  - {issue.description}")
-
-            if len(type_issues) > 5:
-                md.append(f"  - *...and {len(type_issues) - 5} more*")
 
             md.append("")
 
@@ -720,7 +717,7 @@ class Exporter:
     <div class="container">
         <h1>🔍 SEO Report of {domain}</h1>
         {'<p class="meta"><strong>Prepared by:</strong> ' + self.prepared_by + '</p>' if self.prepared_by else ''}
-        <p class="meta">Generated: {datetime.utcnow().strftime('%B %d, %Y at %H:%M UTC')}</p>
+        <p class="meta">Generated: {datetime.now().strftime('%B %d, %Y at %H:%M')}</p>
 
         <div class="stats">
             <div class="stat-card">
@@ -1065,17 +1062,40 @@ class Exporter:
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
 
-        self.export_json(str(output_path / "audit_report.json"))
-        self.export_markdown(str(output_path / "audit_report.md"))
-        self.export_html(str(output_path / "audit_report.html"))
-        self.export_issues_csv(str(output_path / "audit_issues.csv"))
-        self.export_pages_csv(str(output_path / "audit_pages.csv"))
+        # Export each format with error handling
+        try:
+            self.export_json(str(output_path / "audit_report.json"))
+        except Exception as e:
+            print(f"Error exporting JSON: {e}")
+
+        try:
+            self.export_markdown(str(output_path / "audit_report.md"))
+        except Exception as e:
+            print(f"Error exporting Markdown: {e}")
+
+        try:
+            self.export_html(str(output_path / "audit_report.html"))
+        except Exception as e:
+            print(f"Error exporting HTML: {e}")
+
+        try:
+            self.export_issues_csv(str(output_path / "audit_issues.csv"))
+        except Exception as e:
+            print(f"Error exporting issues CSV: {e}")
+
+        try:
+            self.export_pages_csv(str(output_path / "audit_pages.csv"))
+        except Exception as e:
+            print(f"Error exporting pages CSV: {e}")
 
         # Export backlinks if available
-        pages = self.db.get_all_pages()
-        if pages:
-            domain = urlparse(pages[0].url).netloc
-            if self.db.has_cc_backlinks(domain):
-                self.export_backlinks_csv(domain, str(output_path / "audit_backlinks.csv"))
+        try:
+            pages = self.db.get_all_pages()
+            if pages:
+                domain = urlparse(pages[0].url).netloc
+                if self.db.has_cc_backlinks(domain):
+                    self.export_backlinks_csv(domain, str(output_path / "audit_backlinks.csv"))
+        except Exception as e:
+            print(f"Error exporting backlinks CSV: {e}")
 
         print(f"\nAll reports exported to: {output_dir}")

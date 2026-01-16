@@ -109,7 +109,7 @@ class Crawler:
                 url=url,
                 status_code=response.status_code,
                 depth=depth,
-                crawled_at=datetime.utcnow()
+                crawled_at=datetime.now()
             )
 
             # Handle redirects
@@ -133,7 +133,7 @@ class Crawler:
                 url=url,
                 status_code=None,
                 depth=depth,
-                crawled_at=datetime.utcnow()
+                crawled_at=datetime.now()
             )
 
     def _extract_seo_data(self, page: Page, soup: BeautifulSoup) -> None:

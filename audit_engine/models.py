@@ -60,7 +60,7 @@ class Issue:
 
     def __post_init__(self):
         if self.created_at is None:
-            self.created_at = datetime.utcnow()
+            self.created_at = datetime.now()
 
 
 @dataclass
@@ -75,7 +75,7 @@ class CrawlMeta:
 
     def __post_init__(self):
         if self.started_at is None:
-            self.started_at = datetime.utcnow()
+            self.started_at = datetime.now()
 
 
 @dataclass

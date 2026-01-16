@@ -162,7 +162,7 @@ class Database:
                 page.h1_text,
                 page.redirect_to,
                 page.depth,
-                page.crawled_at or datetime.utcnow(),
+                page.crawled_at or datetime.now(),
                 page.content_hash
             ))
 
@@ -194,7 +194,7 @@ class Database:
                 issue.description,
                 issue.affected_url,
                 json.dumps(issue.details) if issue.details else None,
-                issue.created_at or datetime.utcnow()
+                issue.created_at or datetime.now()
             ))
 
     def save_crawl_meta(self, meta: CrawlMeta) -> int:
@@ -313,7 +313,7 @@ class Database:
                 data.get('position', 0),
                 date_range['start'],
                 date_range['end'],
-                datetime.utcnow()
+                datetime.now()
             ))
 
     def save_gsc_queries(self, url: str, queries: list, date_range: dict) -> None:
@@ -436,7 +436,7 @@ class Database:
                     bl['quality_score'],
                     bl.get('vertex_id'),
                     graph_date,
-                    datetime.utcnow()
+                    datetime.now()
                 ))
 
     def get_cc_backlinks(self, target_domain: str, limit: int = 50) -> list:

@@ -150,7 +150,7 @@ def run(url, depth, max_pages, format, output, db, delay, no_robots, business_na
     # Update crawl metadata
     database.update_crawl_meta(
         crawl_id=crawl_id,
-        completed_at=datetime.utcnow(),
+        completed_at=datetime.now(),
         total_pages=len(crawler.visited),
         total_issues=len(all_issues)
     )
