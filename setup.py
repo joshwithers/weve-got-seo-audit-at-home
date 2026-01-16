@@ -9,7 +9,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="weve-got-seo-audit-at-home",
-    version="0.3.0",
+    version="0.4.0",
     author="Josh Withers",
     description="Local-first SEO website audit tool with Google Search Console integration",
     long_description=long_description,
@@ -34,6 +34,7 @@ setup(
         "google-auth-oauthlib>=1.1.0",
         "google-auth-httplib2>=0.1.1",
         "google-api-python-client>=2.100.0",
+        "dnspython>=2.4.0",
     ],
     entry_points={
         "console_scripts": [

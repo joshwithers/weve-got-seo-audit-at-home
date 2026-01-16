@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-01-17
+
+### Added - Infrastructure & Security Checks 🔒
+- **SSL Certificate Validation** - Verifies HTTPS is enabled and certificates are valid
+  - Checks certificate expiration dates
+  - Warns if certificate expires within 30 days
+  - Reports expired certificates as errors
+- **Robots.txt Crawl Permission Analysis**
+  - Reports if robots.txt allows search engine crawling
+  - Detects if site blocks all crawlers with `Disallow: /`
+  - Identifies blocking of specific search engines
+- **AI/LLM Crawler Detection** - Identifies permissions for AI bots
+  - Tracks 12 AI crawlers: GPTBot, ChatGPT-User, Claude-Web, Anthropic-AI, GoogleBot-AI, BingBot-AI, PerplexityBot, Cohere-AI, OmgiliBot, FacebookBot, Diffbot, CCBot
+  - Reports blocked AI crawlers
+  - Reports explicitly allowed AI crawlers
+  - Helps manage AI training data usage
+- **Sitemap Availability Check**
+  - Tests common sitemap locations (sitemap.xml, sitemap_index.xml, etc.)
+  - Checks robots.txt for sitemap declarations
+  - Verifies sitemap is accessible
+- **Email Deliverability Validation**
+  - SPF record validation with policy checking (-all, ~all, +all)
+  - DMARC record validation with policy assessment (none, quarantine, reject)
+  - Warns about missing or weak email authentication
+  - Helps prevent email spoofing and improve deliverability
+- **New Dependency**: dnspython>=2.4.0 for DNS lookups
+
+### Changed
+- Audit now runs 6 checks (was 5)
+- Infrastructure check runs automatically on every audit
+- Reports now include infrastructure and security issues
+
+### Technical Details
+- New file: `audit_engine/checks/infrastructure.py` (399 lines)
+- Modified: `audit_engine/checks/__init__.py` (added InfrastructureCheck)
+- Dependencies: Added dnspython for DNS TXT record lookups
+- Uses Python's built-in `ssl` and `socket` modules for certificate validation
+
 ## [0.3.0] - 2026-01-15
 
 ### Added - Google Search Console Integration 🎉

@@ -1,6 +1,6 @@
 # SEO Audit Engine
 
-**Version 0.3.0** - A local-first SEO website audit tool with Google Search Console integration.
+**Version 0.4.0** - A local-first SEO website audit tool with Google Search Console integration.
 
 ## What It Does
 
@@ -139,6 +139,16 @@ audit gsc-fetch sc-domain:example.com
 3. **Meta Descriptions** - Missing or problematic descriptions
 4. **Headings Structure** - Missing or multiple H1 tags
 5. **Redirects** - Redirect chains and loops
+6. **Infrastructure & Security** - SSL certificates, robots.txt, sitemap, email deliverability
+
+### Infrastructure & Security Details
+
+The infrastructure check verifies:
+- **SSL Certificate** - Validates HTTPS, checks expiration dates
+- **Robots.txt Crawl Permissions** - Reports if your site allows search engine crawling
+- **AI/LLM Crawler Permissions** - Identifies blocked/allowed AI crawlers (GPTBot, Claude-Web, etc.)
+- **Sitemap Availability** - Tests common sitemap locations and robots.txt declarations
+- **Email Deliverability** - Validates SPF and DMARC records for domain reputation
 
 ### Smart Features
 
@@ -257,6 +267,14 @@ audit gsc-auth --credentials /path/to/credentials.json
 ---
 
 ## Version History
+
+### 0.4.0 (2026-01-17)
+- Infrastructure & Security checks
+- SSL certificate validation with expiration warnings
+- Robots.txt crawl permission reporting
+- AI/LLM crawler detection and reporting
+- Sitemap availability checks
+- Email deliverability (SPF/DMARC) validation
 
 ### 0.3.0 (2026-01-15)
 - Google Search Console integration

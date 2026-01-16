@@ -8,6 +8,7 @@ from .titles import TitlesCheck
 from .meta_description import MetaDescriptionCheck
 from .headings import HeadingsCheck
 from .redirects import RedirectsCheck
+from .infrastructure import InfrastructureCheck
 
 # Registry of all available checks
 ALL_CHECKS = [
@@ -16,6 +17,7 @@ ALL_CHECKS = [
     MetaDescriptionCheck,
     HeadingsCheck,
     RedirectsCheck,
+    InfrastructureCheck,
 ]
 
 __all__ = [
@@ -25,5 +27,6 @@ __all__ = [
     'MetaDescriptionCheck',
     'HeadingsCheck',
     'RedirectsCheck',
+    'InfrastructureCheck',
     'ALL_CHECKS',
 ]

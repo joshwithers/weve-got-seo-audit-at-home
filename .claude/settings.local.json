@@ -19,7 +19,11 @@
       "Bash(audit clear:*)",
       "WebFetch(domain:commoncrawl.org)",
       "WebSearch",
-      "WebFetch(domain:data.commoncrawl.org)"
+      "WebFetch(domain:data.commoncrawl.org)",
+      "Bash(python -m audit_engine.cli:*)",
+      "Bash(sqlite3:*)",
+      "Bash(ls:*)",
+      "Bash(audit:*)"
     ],
     "deny": [],
     "ask": []
