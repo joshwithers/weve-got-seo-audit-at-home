@@ -1,4 +1,6 @@
-# SEO Audit Engine
+# We've got SEO Audit at home
+
+## A locally run SEO Audit Engine
 
 **Version 0.4.0** - A local-first SEO website audit tool with Google Search Console integration.
 
