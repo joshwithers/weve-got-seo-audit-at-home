@@ -26,7 +26,8 @@
       "Bash(audit:*)",
       "Bash(grep:*)",
       "Bash(python -m py_compile:*)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(/Users/joshuawithers/audit-tool/macos-app/Scripts/build.sh:*)"
     ],
     "deny": [],
     "ask": []
