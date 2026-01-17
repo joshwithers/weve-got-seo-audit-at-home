@@ -109,10 +109,10 @@ class Exporter:
             'pages_with_traffic': len(gsc_data)
         }
 
-    def _calculate_opportunity(self, gsc_data: dict) -> Optional[str]:
+    def _calculate_opportunity(self, gsc_data: dict) -> Optional[dict]:
         """
         Calculate traffic opportunity for a page.
-        Estimates potential traffic gain if position improves.
+        Returns detailed actionable opportunity data.
         """
         if not gsc_data or 'position' not in gsc_data:
             return None
@@ -120,22 +120,105 @@ class Exporter:
         position = gsc_data['position']
         clicks = gsc_data['clicks']
         impressions = gsc_data['impressions']
+        current_ctr = (clicks / impressions * 100) if impressions > 0 else 0
 
-        # If already in top 3, opportunity is limited
-        if position <= 3:
-            return "Already in top 3 positions"
+        # Expected CTR by position (industry benchmarks)
+        expected_ctr_map = {
+            1: 28.5, 2: 15.7, 3: 11.0, 4: 8.0, 5: 7.2,
+            6: 5.1, 7: 4.0, 8: 3.2, 9: 2.8, 10: 2.5
+        }
 
-        # Estimate CTR improvement if moved to top 3
-        # Rough estimates: position 1 ≈ 30% CTR, position 2 ≈ 15% CTR, position 3 ≈ 10% CTR
-        current_ctr = (clicks / impressions) if impressions > 0 else 0
-        target_ctr = 0.15  # Target position 2
+        # Get expected CTR for current position
+        pos_bucket = min(10, max(1, int(round(position))))
+        expected_ctr = expected_ctr_map.get(pos_bucket, 2.0)
 
-        if current_ctr < target_ctr:
-            potential_clicks = int(impressions * target_ctr) - clicks
-            if potential_clicks > 10:
-                return f"+{potential_clicks} clicks/month if moved to top 3"
+        # Build opportunity data
+        opportunity = {
+            'current_position': round(position, 1),
+            'current_ctr': round(current_ctr, 2),
+            'expected_ctr': expected_ctr,
+            'impressions': impressions,
+            'current_clicks': clicks
+        }
 
-        return None
+        # CTR performance vs expected
+        if current_ctr < expected_ctr * 0.7:
+            opportunity['ctr_status'] = 'underperforming'
+            opportunity['ctr_gap'] = round(expected_ctr - current_ctr, 1)
+        elif current_ctr > expected_ctr * 1.3:
+            opportunity['ctr_status'] = 'outperforming'
+        else:
+            opportunity['ctr_status'] = 'normal'
+
+        # Calculate potential gains
+        if position > 3:
+            # Potential if moved to position 3
+            target_ctr = expected_ctr_map[3] / 100
+            potential_clicks = int(impressions * target_ctr)
+            opportunity['potential_clicks_top3'] = potential_clicks
+            opportunity['click_gain_top3'] = max(0, potential_clicks - clicks)
+
+            # Potential if moved to position 1
+            target_ctr_p1 = expected_ctr_map[1] / 100
+            potential_clicks_p1 = int(impressions * target_ctr_p1)
+            opportunity['potential_clicks_top1'] = potential_clicks_p1
+            opportunity['click_gain_top1'] = max(0, potential_clicks_p1 - clicks)
+        else:
+            opportunity['already_top3'] = True
+            if position > 1:
+                # Potential if moved to position 1
+                target_ctr_p1 = expected_ctr_map[1] / 100
+                potential_clicks_p1 = int(impressions * target_ctr_p1)
+                opportunity['potential_clicks_top1'] = potential_clicks_p1
+                opportunity['click_gain_top1'] = max(0, potential_clicks_p1 - clicks)
+
+        # Generate actionable recommendations
+        recommendations = []
+
+        if opportunity.get('ctr_status') == 'underperforming':
+            recommendations.append("Improve title tag to be more compelling and click-worthy")
+            recommendations.append("Rewrite meta description with clear value proposition and call-to-action")
+
+        if position > 10:
+            recommendations.append("Build quality backlinks to improve domain authority")
+            recommendations.append("Expand content depth and add related keywords")
+        elif position > 5:
+            recommendations.append("Add internal links from high-authority pages")
+            recommendations.append("Update content with fresh information and better keyword coverage")
+        elif position > 3:
+            recommendations.append("Optimize for featured snippets with structured answers")
+            recommendations.append("Improve page experience (Core Web Vitals)")
+        elif position > 1:
+            recommendations.append("Fine-tune exact keyword placement in title and H1")
+            recommendations.append("Analyze position #1 competitor and identify content gaps")
+
+        opportunity['recommendations'] = recommendations
+
+        return opportunity
+
+    def _format_opportunity_text(self, opportunity: dict) -> str:
+        """Format opportunity dict into a readable string."""
+        if not opportunity:
+            return ""
+
+        lines = []
+
+        # Position and CTR summary
+        lines.append(f"Position {opportunity['current_position']} | CTR: {opportunity['current_ctr']}% (expected: {opportunity['expected_ctr']}%)")
+
+        # CTR status
+        if opportunity.get('ctr_status') == 'underperforming':
+            lines.append(f"⚠️ CTR is {opportunity['ctr_gap']}% below expected - title/meta needs improvement")
+        elif opportunity.get('ctr_status') == 'outperforming':
+            lines.append("✓ CTR is above average for this position")
+
+        # Potential gains
+        if opportunity.get('click_gain_top3') and opportunity['click_gain_top3'] > 10:
+            lines.append(f"📈 +{opportunity['click_gain_top3']} clicks/month if moved to top 3")
+        if opportunity.get('click_gain_top1') and opportunity['click_gain_top1'] > 10:
+            lines.append(f"🚀 +{opportunity['click_gain_top1']} clicks/month if ranked #1")
+
+        return " | ".join(lines) if len(lines) <= 2 else "\n".join(lines)
 
     def _has_backlinks_data(self, domain: str = None) -> bool:
         """Check if backlinks data is available."""
@@ -400,6 +483,38 @@ class Exporter:
             md.append(f"- **Pages with Traffic:** {traffic_summary['pages_with_traffic']:,}\n")
             md.append("---\n")
 
+        # Page Rankings / Keywords Section (if GSC data available)
+        if self._has_gsc_data():
+            md.append("## 🔑 Page Rankings & Keywords\n")
+            md.append("*Keywords each page is ranking for in Google Search*\n")
+
+            # Get all pages with their GSC data, sorted by clicks
+            pages_with_gsc = []
+            for page in pages:
+                gsc_data = self._match_gsc_to_page(page.url)
+                if gsc_data and gsc_data.get('queries'):
+                    pages_with_gsc.append((page, gsc_data))
+
+            # Sort by clicks descending
+            pages_with_gsc.sort(key=lambda x: x[1]['clicks'], reverse=True)
+
+            for page, gsc_data in pages_with_gsc[:30]:  # Limit to top 30 pages
+                md.append(f"### {page.url}\n")
+                md.append(f"**Traffic:** {gsc_data['clicks']:,} clicks | {gsc_data['impressions']:,} impressions | Position: {gsc_data['position']:.1f} | CTR: {gsc_data['ctr']*100:.1f}%\n")
+
+                # Show all queries for this page
+                md.append("| Keyword | Position | Clicks | Impressions | CTR |")
+                md.append("|---------|----------|--------|-------------|-----|")
+                for q in gsc_data['queries']:
+                    ctr_pct = f"{q['ctr']*100:.1f}%" if q.get('ctr') else "0%"
+                    md.append(f"| {q['query']} | {q['position']:.1f} | {q['clicks']} | {q['impressions']} | {ctr_pct} |")
+                md.append("")
+
+            if len(pages_with_gsc) > 30:
+                md.append(f"*Showing top 30 of {len(pages_with_gsc)} pages with keyword data*\n")
+
+            md.append("---\n")
+
         # Backlinks Summary (if available)
         if backlinks_summary:
             md.append("## 🔗 Backlink Profile (Common Crawl)\n")
@@ -463,7 +578,13 @@ class Exporter:
                     # Calculate opportunity
                     opportunity = self._calculate_opportunity(gsc_data)
                     if opportunity:
-                        md.append(f"  - 💰 **Opportunity:** {opportunity}")
+                        md.append(f"  - 💰 **Opportunity:** CTR {opportunity['current_ctr']}% (expected {opportunity['expected_ctr']}% for position {opportunity['current_position']})")
+                        if opportunity.get('ctr_status') == 'underperforming':
+                            md.append(f"    - ⚠️ CTR is {opportunity['ctr_gap']}% below expected")
+                        if opportunity.get('click_gain_top3') and opportunity['click_gain_top3'] > 10:
+                            md.append(f"    - 📈 +{opportunity['click_gain_top3']} clicks/month potential if moved to top 3")
+                        if opportunity.get('recommendations'):
+                            md.append(f"    - 🎯 **Actions:** {'; '.join(opportunity['recommendations'][:2])}")
 
             if issue.details:
                 md.append(f"  - Details: {self._format_details(issue.details)}")
@@ -798,6 +919,61 @@ class Exporter:
         </table>
 """
 
+        # Add Page Rankings / Keywords section if GSC data available
+        if self._has_gsc_data():
+            # Get all pages with their GSC data, sorted by clicks
+            pages_with_gsc = []
+            for page in pages:
+                gsc_data = self._match_gsc_to_page(page.url)
+                if gsc_data and gsc_data.get('queries'):
+                    pages_with_gsc.append((page, gsc_data))
+
+            # Sort by clicks descending
+            pages_with_gsc.sort(key=lambda x: x[1]['clicks'], reverse=True)
+
+            if pages_with_gsc:
+                html += """
+        <h2>🔑 Page Rankings & Keywords</h2>
+        <p>Keywords each page is ranking for in Google Search</p>
+"""
+                for page, gsc_data in pages_with_gsc[:20]:  # Limit to top 20 pages for HTML
+                    html += f"""
+        <div class="todo-item" style="border-left-color: #27ae60;">
+            <strong><a href="{page.url}" target="_blank" class="url">{page.url}</a></strong>
+            <div class="traffic-info">
+                📊 {gsc_data['clicks']:,} clicks | {gsc_data['impressions']:,} impressions | Position: {gsc_data['position']:.1f} | CTR: {gsc_data['ctr']*100:.1f}%
+            </div>
+            <table style="margin-top: 10px; font-size: 13px;">
+                <thead>
+                    <tr>
+                        <th style="padding: 6px;">Keyword</th>
+                        <th style="padding: 6px;">Position</th>
+                        <th style="padding: 6px;">Clicks</th>
+                        <th style="padding: 6px;">Impressions</th>
+                        <th style="padding: 6px;">CTR</th>
+                    </tr>
+                </thead>
+                <tbody>
+"""
+                    for q in gsc_data['queries']:
+                        ctr_pct = f"{q['ctr']*100:.1f}%" if q.get('ctr') else "0%"
+                        html += f"""
+                    <tr>
+                        <td style="padding: 6px;">{q['query']}</td>
+                        <td style="padding: 6px;">{q['position']:.1f}</td>
+                        <td style="padding: 6px;">{q['clicks']}</td>
+                        <td style="padding: 6px;">{q['impressions']}</td>
+                        <td style="padding: 6px;">{ctr_pct}</td>
+                    </tr>
+"""
+                    html += """
+                </tbody>
+            </table>
+        </div>
+"""
+                if len(pages_with_gsc) > 20:
+                    html += f"""<p><em>Showing top 20 of {len(pages_with_gsc)} pages with keyword data</em></p>"""
+
         html += """
 
         <h2>🎯 Action Items</h2>
@@ -836,7 +1012,17 @@ class Exporter:
                     # Calculate opportunity
                     opportunity = self._calculate_opportunity(gsc_data)
                     if opportunity:
-                        issue_html += f"""<div class="opportunity">💰 Opportunity: {opportunity}</div>"""
+                        opp_html = f"""<div class="opportunity">
+                            <strong>💰 Opportunity Analysis:</strong><br>
+                            CTR: {opportunity['current_ctr']}% (expected {opportunity['expected_ctr']}% for position {opportunity['current_position']})"""
+                        if opportunity.get('ctr_status') == 'underperforming':
+                            opp_html += f"""<br>⚠️ CTR is {opportunity['ctr_gap']}% below expected - improve title/meta"""
+                        if opportunity.get('click_gain_top3') and opportunity['click_gain_top3'] > 10:
+                            opp_html += f"""<br>📈 +{opportunity['click_gain_top3']} clicks/month potential if moved to top 3"""
+                        if opportunity.get('recommendations'):
+                            opp_html += f"""<br>🎯 <strong>Actions:</strong> {'; '.join(opportunity['recommendations'][:2])}"""
+                        opp_html += """</div>"""
+                        issue_html += opp_html
 
             if issue.details:
                 issue_html += f"""<div class="details">{self._format_details(issue.details)}</div>"""

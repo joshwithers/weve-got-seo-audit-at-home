@@ -200,14 +200,22 @@ class Crawler:
         - Remove fragments
         - Lowercase scheme and domain
         - Remove default ports
+        - Normalize trailing slashes (keep for root, remove for others)
         """
         parsed = urlparse(url)
+
+        # Normalize path: remove trailing slash except for root path
+        path = parsed.path
+        if path != '/' and path.endswith('/'):
+            path = path.rstrip('/')
+        elif not path:
+            path = '/'
 
         # Remove fragment
         normalized = urlunparse((
             parsed.scheme.lower(),
             parsed.netloc.lower(),
-            parsed.path,
+            path,
             parsed.params,
             parsed.query,
             ''  # No fragment

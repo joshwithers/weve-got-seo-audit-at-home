@@ -23,7 +23,9 @@
       "Bash(python -m audit_engine.cli:*)",
       "Bash(sqlite3:*)",
       "Bash(ls:*)",
-      "Bash(audit:*)"
+      "Bash(audit:*)",
+      "Bash(grep:*)",
+      "Bash(python -m py_compile:*)"
     ],
     "deny": [],
     "ask": []
