@@ -249,6 +249,60 @@ def clear(db):
 
 
 @cli.command()
+@click.option('--db', default='audit.db', help='SQLite database file (default: audit.db)')
+def status(db):
+    """
+    Show database status and statistics.
+
+    Useful for debugging issues with reports.
+
+    Example:
+        audit status
+    """
+    from pathlib import Path
+
+    db_path = Path(db)
+    if not db_path.exists():
+        click.echo(f"❌ Database not found: {db}")
+        return
+
+    click.echo(f"📊 Database Status: {db}")
+    click.echo(f"   Size: {db_path.stat().st_size / 1024:.1f} KB\n")
+
+    database = Database(db)
+    pages = database.get_all_pages()
+    issues = database.get_all_issues()
+
+    click.echo(f"📄 Pages: {len(pages)}")
+    if pages:
+        click.echo(f"   First: {pages[0].url}")
+        click.echo(f"   Last:  {pages[-1].url}")
+
+    click.echo(f"\n⚠️  Issues: {len(issues)}")
+    if issues:
+        errors = sum(1 for i in issues if i.severity.value == "error")
+        warnings = sum(1 for i in issues if i.severity.value == "warning")
+        notices = sum(1 for i in issues if i.severity.value == "notice")
+        click.echo(f"   Errors:   {errors}")
+        click.echo(f"   Warnings: {warnings}")
+        click.echo(f"   Notices:  {notices}")
+
+        # Calculate health score
+        if len(pages) > 0:
+            issue_rate = ((errors * 3) + (warnings * 2) + (notices * 1)) / len(pages)
+            health_score = max(0, min(100, 100 - (issue_rate * 25)))
+            click.echo(f"\n💚 Health Score: {health_score:.1f}/100")
+            click.echo(f"   (issue_rate = {issue_rate:.2f} issues/page weighted)")
+        else:
+            click.echo(f"\n💚 Health Score: 0/100 (no pages)")
+
+    # GSC data
+    if database.has_gsc_data():
+        gsc_data = database.get_gsc_page_data()
+        click.echo(f"\n📈 GSC Data: {len(gsc_data)} pages with traffic")
+
+
+@cli.command()
 def checks():
     """
     List all available audit checks.

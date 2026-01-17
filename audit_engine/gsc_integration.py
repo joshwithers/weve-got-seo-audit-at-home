@@ -135,12 +135,27 @@ class GSCClient:
             if not self.authenticate():
                 return {}
 
-        # Normalize site URL
-        site_url = self._normalize_site_url(site_url)
-
         # Date range
         end_date = datetime.now().date()
         start_date = end_date - timedelta(days=days)
+
+        # Auto-match to available GSC property
+        original_url = site_url
+        matched_property = self.find_matching_property(site_url)
+
+        if matched_property:
+            site_url = matched_property
+            if matched_property != self._normalize_site_url(original_url):
+                print(f"📍 Matched to GSC property: {matched_property}")
+        else:
+            # Fall back to normalized URL
+            site_url = self._normalize_site_url(site_url)
+            available_sites = self.get_sites()
+            if available_sites:
+                print(f"⚠️  No matching GSC property found for {site_url}")
+                print(f"   Available properties: {', '.join(available_sites)}")
+                print(f"   Make sure this site is verified in your Google Search Console.")
+                return {}
 
         print(f"Fetching GSC data for {site_url} ({start_date} to {end_date})...")
 
@@ -255,6 +270,73 @@ class GSCClient:
         parsed = urlparse(url)
         normalized = f"{parsed.scheme}://{parsed.netloc}/"
         return normalized
+
+    def _extract_domain(self, url: str) -> str:
+        """Extract the base domain from a URL (without www prefix)."""
+        if url.startswith('sc-domain:'):
+            return url.replace('sc-domain:', '')
+
+        parsed = urlparse(url)
+        domain = parsed.netloc
+
+        # Remove www. prefix if present
+        if domain.startswith('www.'):
+            domain = domain[4:]
+
+        return domain
+
+    def find_matching_property(self, target_url: str) -> Optional[str]:
+        """
+        Find a GSC property that matches the target URL.
+
+        Checks against all available properties and matches by domain,
+        handling various property formats (URL prefix, domain property, www/non-www).
+
+        Returns the matching GSC property URL, or None if no match found.
+        """
+        sites = self.get_sites()
+        if not sites:
+            return None
+
+        target_domain = self._extract_domain(target_url)
+
+        # Priority order for matching:
+        # 1. Exact match (normalized)
+        # 2. Domain property (sc-domain:)
+        # 3. Same domain with different prefix (www/non-www)
+        # 4. Same domain with different protocol (http/https)
+
+        normalized_target = self._normalize_site_url(target_url)
+
+        # Check for exact match first
+        if normalized_target in sites:
+            return normalized_target
+
+        # Check for domain property
+        domain_property = f"sc-domain:{target_domain}"
+        if domain_property in sites:
+            return domain_property
+
+        # Check for www variant
+        parsed = urlparse(target_url)
+        if parsed.netloc.startswith('www.'):
+            # Target has www, check for non-www version
+            non_www = f"{parsed.scheme}://{parsed.netloc[4:]}/"
+            if non_www in sites:
+                return non_www
+        else:
+            # Target doesn't have www, check for www version
+            with_www = f"{parsed.scheme}://www.{parsed.netloc}/"
+            if with_www in sites:
+                return with_www
+
+        # Check for protocol variants (http vs https)
+        for site in sites:
+            site_domain = self._extract_domain(site)
+            if site_domain == target_domain:
+                return site
+
+        return None
 
     def test_connection(self) -> bool:
         """Test if authentication and API access work."""

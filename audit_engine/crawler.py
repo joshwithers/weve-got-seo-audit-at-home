@@ -68,13 +68,17 @@ class Crawler:
             if page:
                 self.db.save_page(page)
                 self.visited.add(url)
+                # Also mark canonical URL as visited to prevent duplicate crawls
+                if page.url != url:
+                    self.visited.add(page.url)
                 pages_crawled += 1
 
-                print(f"[{pages_crawled}] Crawled: {url} (status: {page.status_code}, depth: {depth})")
+                print(f"[{pages_crawled}] Crawled: {page.url} (status: {page.status_code}, depth: {depth})")
 
                 # Extract and queue internal links if page is successful
                 if page.status_code and 200 <= page.status_code < 300:
-                    links = self._extract_links(url, page, base_domain)
+                    # Use the page's URL (which may be canonical) as the source
+                    links = self._extract_links(page.url, page, base_domain)
 
                     # Save links to database
                     for link in links:
@@ -123,6 +127,12 @@ class Crawler:
 
                 # Generate content hash for deduplication detection
                 page.content_hash = hashlib.md5(response.content).hexdigest()
+
+                # Prefer canonical URL if it's a variant of the same page
+                if page.canonical:
+                    canonical_url = self._resolve_canonical(url, page.canonical)
+                    if canonical_url and self._is_same_page(url, canonical_url):
+                        page.url = canonical_url
 
             return page
 
@@ -263,3 +273,41 @@ class Crawler:
         except Exception:
             # If there's an error checking robots.txt, allow the fetch
             return True
+
+    def _resolve_canonical(self, base_url: str, canonical: str) -> Optional[str]:
+        """Resolve a canonical URL (may be relative) to an absolute URL."""
+        if not canonical:
+            return None
+
+        # If canonical is already absolute, return it
+        if canonical.startswith('http://') or canonical.startswith('https://'):
+            return canonical
+
+        # Resolve relative canonical against base URL
+        return urljoin(base_url, canonical)
+
+    def _is_same_page(self, url1: str, url2: str) -> bool:
+        """
+        Check if two URLs refer to the same page.
+        Handles trailing slash differences and minor variations.
+        """
+        parsed1 = urlparse(url1)
+        parsed2 = urlparse(url2)
+
+        # Must have same scheme and domain
+        if parsed1.scheme != parsed2.scheme or parsed1.netloc != parsed2.netloc:
+            return False
+
+        # Normalize paths for comparison (strip trailing slashes)
+        path1 = parsed1.path.rstrip('/') or '/'
+        path2 = parsed2.path.rstrip('/') or '/'
+
+        # Paths must match
+        if path1 != path2:
+            return False
+
+        # Query strings must match
+        if parsed1.query != parsed2.query:
+            return False
+
+        return True

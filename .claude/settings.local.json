@@ -25,7 +25,8 @@
       "Bash(ls:*)",
       "Bash(audit:*)",
       "Bash(grep:*)",
-      "Bash(python -m py_compile:*)"
+      "Bash(python -m py_compile:*)",
+      "Bash(wc:*)"
     ],
     "deny": [],
     "ask": []
