@@ -31,7 +31,7 @@ def cli():
 @click.argument('url')
 @click.option('--depth', default=3, help='Maximum crawl depth (default: 3)')
 @click.option('--max-pages', default=1000, help='Maximum pages to crawl (default: 1000)')
-@click.option('--format', type=click.Choice(['json', 'markdown', 'html', 'csv', 'all']), default='markdown', help='Output format (default: markdown)')
+@click.option('--format', type=click.Choice(['json', 'markdown', 'html', 'csv', 'all']), default='html', help='Output format (default: html)')
 @click.option('--output', '-o', help='Output file path (auto-generated if not specified)')
 @click.option('--db', default='audit.db', help='SQLite database file (default: audit.db)')
 @click.option('--delay', default=0.5, help='Delay between requests in seconds (default: 0.5)')
@@ -194,7 +194,7 @@ def run(url, depth, max_pages, format, output, db, delay, no_robots, business_na
 @cli.command()
 @click.option('--db', default='audit.db', help='SQLite database file (default: audit.db)')
 @click.option('--output', '-o', help='Output file path')
-@click.option('--format', type=click.Choice(['json', 'markdown', 'html', 'csv', 'all']), default='markdown', help='Export format (default: markdown)')
+@click.option('--format', type=click.Choice(['json', 'markdown', 'html', 'csv', 'all']), default='html', help='Export format (default: html)')
 @click.option('--business-name', default='SEO Audit Engine', help='Business name for report credits (default: SEO Audit Engine)')
 @click.option('--prepared-by', default='', help='Name of person/team preparing the report')
 def export(db, output, format, business_name, prepared_by):
@@ -204,7 +204,7 @@ def export(db, output, format, business_name, prepared_by):
     Use this to re-export data without re-crawling.
 
     Example:
-        audit export --format markdown
+        audit export --format html
         audit export --format html -o my_report.html
         audit export --format json -o report.json
         audit export --format csv

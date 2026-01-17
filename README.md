@@ -32,10 +32,10 @@ source venv/bin/activate
 # Simple audit (no GSC required)
 audit run https://example.com
 
-# With Google Search Console traffic data
+# With Google Search Console traffic data (RECOMMENDED)
 audit run https://example.com --with-gsc
 
-# Full site audit
+# Full site audit with all options
 audit run https://example.com --max-pages 1000 --depth 5 --with-gsc --format html
 ```
 
@@ -127,6 +127,8 @@ audit gsc-fetch sc-domain:example.com
 
 Get traffic-prioritized insights by connecting to Google Search Console.
 
+**TL;DR:** Use `audit run https://example.com --with-gsc` - one command does everything.
+
 ### Setup (5 minutes)
 
 #### Step 1: Create Google Cloud Project
@@ -209,38 +211,59 @@ You should see your connected sites listed.
 
 ### Usage
 
-```bash
-# Fetch GSC data during audit
-audit run https://example.com --with-gsc
+**Recommended: Use `--with-gsc` flag** (simplest, one command does everything)
 
-# Fetch GSC data separately
-audit gsc-fetch https://example.com --days 180
+```bash
+# Standard audit with GSC data
+audit run https://example.com --with-gsc
 
 # Custom date range
 audit run https://example.com --with-gsc --gsc-days 30
+
+# Full example
+audit run https://example.com --with-gsc --format html --prepared-by "Your Name"
 ```
+
+**Alternative: Fetch GSC separately** (advanced, for large sites or updating GSC data only)
+
+```bash
+# 1. Crawl the site
+audit run https://example.com
+
+# 2. Later, add GSC data without re-crawling
+audit gsc-fetch https://example.com --days 180
+
+# 3. Re-export reports with GSC data included
+audit export --format html
+```
+
+**When to use the alternative:**
+- Very large sites (>10,000 pages) where crawling takes hours
+- Updating GSC data weekly without re-crawling
+- Want to crawl first, then decide about GSC later
 
 ---
 
 ## Export Formats
 
-### Markdown (Default)
+### HTML (Default)
 ```bash
 audit run <url>
-# Creates: audit_report.md
+# Creates: audit_report.html
+```
+- Interactive checkboxes (saves state)
+- Color-coded severity
+- Client-ready reports
+- Opens beautifully in any browser
+
+### Markdown
+```bash
+audit run <url> --format markdown
 ```
 - GitHub-style checkboxes
 - Traffic metrics and top queries
 - Perfect for feeding to ChatGPT/Claude
 - **All issues listed** - no truncation
-
-### HTML
-```bash
-audit run <url> --format html
-```
-- Interactive checkboxes (saves state)
-- Color-coded severity
-- Client-ready reports
 
 ### JSON
 ```bash
@@ -285,11 +308,12 @@ audit gsc-auth --credentials /path/to/credentials.json
 # Or authenticate during audit (you'll be prompted)
 ```
 
-### "No GSC data found"
+### "No GSC data found" or Permission Error
+- **Most common issue:** Property format mismatch
+  - If you have a domain property (`sc-domain:example.com`), use: `audit gsc-fetch sc-domain:example.com`
+  - If you have a URL property (`https://example.com/`), use: `audit gsc-fetch https://example.com`
+- Check available properties: `audit gsc-test`
 - Verify site is in Search Console: https://search.google.com/search-console
-- Use correct property format:
-  - Domain property: `sc-domain:example.com`
-  - URL prefix: `https://example.com`
 - Wait 24-48 hours after adding site for data to appear
 
 ### "Credentials file not found"

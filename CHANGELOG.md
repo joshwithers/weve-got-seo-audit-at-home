@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 - New dependency: `dnspython>=2.4.0` for DNS lookups
 
 ### Changed
+- **Default Export Format** - Changed from Markdown to HTML (more user-friendly, interactive)
 - **Broken Links Check** - Removed "uncrawled URL" warnings (now only reports actionable 404s and errors)
 - **Issue Reporting** - All issues now listed in full (removed "and X more" truncation)
 - **Timestamps** - All timestamps now use local time instead of UTC
