@@ -31,7 +31,9 @@
       "Bash(python:*)",
       "Bash(/Users/joshuawithers/audit-tool/macos-app/PythonBackend/venv/bin/pip:*)",
       "Bash(/Users/joshuawithers/audit-tool/macos-app/Scripts/prepare-for-distribution.sh:*)",
-      "Bash(xcodebuild:*)"
+      "Bash(xcodebuild:*)",
+      "Bash(pkill:*)",
+      "Bash(curl:*)"
     ],
     "deny": [],
     "ask": []
